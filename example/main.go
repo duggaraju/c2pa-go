@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -14,6 +15,8 @@ import (
 
 	"c2pa.org/lib"
 )
+
+const DEFAULT_MANIFEST = "{}"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -55,10 +58,6 @@ func main() {
 			log.Fatalf("sign: -o is required")
 		}
 
-		if *signManifest == "" {
-			log.Fatalf("sign: -m is required")
-		}
-
 		handleSign(*signIn, *signOut, *signManifest, *certificates, *key)
 	default:
 		usage()
@@ -85,12 +84,18 @@ func handleRead(path string) {
 }
 
 func handleSign(input, output, manifest, certificates, key string) {
-	content, err := os.ReadFile(manifest)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to read manifest file: %v", err)
+	_, err := os.Stat(manifest)
+	if errors.Is(err, os.ErrNotExist) {
+		manifest = DEFAULT_MANIFEST
+	} else {
+		content, err := os.ReadFile(manifest)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to read manifest file: %v", err)
+		}
+		manifest = string(content)
 	}
 
-	builder, err := lib.BuilderFromJson(string(content))
+	builder, err := lib.BuilderFromJson(manifest)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create builder: %v", err)
 	}
