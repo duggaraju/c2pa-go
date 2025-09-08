@@ -27,7 +27,7 @@ Quick steps
 
      ./build.sh release
 
-   The script runs `cargo build` in `lib/c2pa-rs/c2pa_c_ffi`.
+   The script runs `cargo build` in `c2pa-rs/c2pa_c_ffi`.
 
 3. Build / run the Go example
 
