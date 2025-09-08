@@ -34,4 +34,4 @@ popd >/dev/null
 echo "Done. Built artifacts are in: $SUBMODULE_DIR/$TARGET_DIR"
 
 go build ./lib $GO_ARGS
-go build ./example $GO_ARGS
+cd example && go build . $GO_ARGS

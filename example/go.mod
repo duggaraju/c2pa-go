@@ -1,3 +1,3 @@
 module github.com/duggaraju/c2pa-go/example
 
-go 1.22.2
+go 1.24.0

@@ -17,15 +17,15 @@ Quick steps
 
 2. Build the Rust library
 
-   The repository includes a helper script: `lib/build_c2pa_rs.sh`.
+   The repository includes a helper script: `build.sh`.
 
    - Build debug (default):
 
-     ./lib/build_c2pa_rs.sh
+     ./build.sh
 
    - Build release:
 
-     ./lib/build_c2pa_rs.sh release
+     ./build.sh release
 
    The script runs `cargo build` in `lib/c2pa-rs/c2pa_c_ffi`.
 
@@ -45,7 +45,7 @@ Quick steps
 
    Example (build release Rust then run the example):
 
-     go run -toolexec 'sh -c "./lib/build_c2pa_rs.sh release; exec \"$@\""' ./example
+     go run -toolexec 'sh -c "./build.sh release; exec \"$@\""' ./example
 
    Notes:
    - The wrapper string should end with `exec "$@"` so the original tool (compiler/linker) is invoked with its arguments after the script finishes.
