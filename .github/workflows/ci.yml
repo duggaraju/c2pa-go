@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-latest
+    env:
+      GO_VERSION: '1.23.0'
+      RUST_VERSION: 'stable'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          profile: minimal
+          override: true
+
+      - name: Build Rust (release)
+        run: ./lib/build_c2pa_rs.sh release
+
+      - name: Build Go
+        run: go build ./...
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Publish Go package
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "Publishing Go package (placeholder)"
+          # Add your actual publish step here, e.g. 'go install', 'goreleaser', or push to a registry
