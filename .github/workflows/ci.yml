@@ -31,7 +31,7 @@ jobs:
           override: true
 
       - name: Build Rust (release)
-        run: ./build.sh release
+        run: cd lib/c2pa-rs && cargo build -p c2pa_c_ffi --features rust_native_crypto --release
 
       - name: Build Go
         run: go build ./...
