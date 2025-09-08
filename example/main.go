@@ -13,7 +13,7 @@ import (
 	"log"
 	"os"
 
-	"c2pa.org/lib"
+	"github.com/duggaraju/c2pa-go/lib"
 )
 
 const DEFAULT_MANIFEST = "{}"
