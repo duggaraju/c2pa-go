@@ -1,4 +1,4 @@
-# c2pa-go (example)
+# c2pa-go (Go bindings for c2pa-rs library)
 
 This workspace contains a small Go library that wraps a C API (via cgo) which in turn can use a Rust-based implementation (`c2pa-rs`) as a submodule. It also contains a simple example CLI that demonstrates reading and (placeholder) signing operations.
 
