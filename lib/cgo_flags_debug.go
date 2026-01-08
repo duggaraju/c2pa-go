@@ -1,5 +1,5 @@
-//go:build !release
-// +build !release
+//go:build !release && !linux
+// +build !release,!linux
 
 package lib
 

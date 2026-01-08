@@ -10,9 +10,6 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}/example",
-            "env": {
-                "LD_LIBRARY_PATH": "${workspaceFolder}/c2pa-rs/target/debug"
-            },
             "args": [
                 "sign",
                 "-i", "${workspaceFolder}/c2pa-rs/sdk/tests/fixtures/C.jpg",

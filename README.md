@@ -33,7 +33,7 @@ Quick steps
 
    - Run in debug mode (uses the debug build paths):
 
-     LD_LIBRARY_PATH=./c2pa-rs/target/debug go run ./example
+     go run ./example
 
    - Run using the release build (uses the release build paths):
 

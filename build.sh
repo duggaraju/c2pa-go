@@ -9,7 +9,7 @@ BUILD_TYPE=${1:-debug}
 if [ "$BUILD_TYPE" = "release" ]; then
   CARGO_ARGS="--release"
   TARGET_DIR="target/release"
-  GO_ARGS=(-ldflags="-s -w")
+  GO_ARGS=(-tags=release -ldflags="-s -w")
 else
   GO_ARGS=(-gcflags="-N -l")
   CARGO_ARGS=""
@@ -34,4 +34,4 @@ popd >/dev/null
 echo "Done. Built artifacts are in: $SUBMODULE_DIR/$TARGET_DIR"
 
 go build "${GO_ARGS[@]}" ./lib
-cd example && go "${GO_ARGS[@]}" .
+cd example && go build "${GO_ARGS[@]}" .
