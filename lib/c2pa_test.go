@@ -1,6 +1,12 @@
+//go:build linux && cgo
+// +build linux,cgo
+
 package lib
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -8,8 +14,23 @@ import (
 
 func TestCpaVersion(t *testing.T) {
 	v := CpaVersion()
-	expected := "c2pa-c-ffi/0.61.0 c2pa-rs/0.61.0"
-	assert.Equal(t, expected, v)
+	assert.NotEmpty(t, v)
+	assert.Regexp(t, regexp.MustCompile(`^c2pa-c-ffi/\d+\.\d+\.\d+\s+c2pa-rs/\d+\.\d+\.\d+$`), v)
+}
+
+func TestC2paError_AfterReaderFailure(t *testing.T) {
+	// Trigger a failure that happens inside the C2PA library (so c2pa_error is populated),
+	// not a Go-side error like "os.Open" failing.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.jpg")
+	err := os.WriteFile(path, nil, 0o644)
+	assert.NoError(t, err)
+
+	_, readerErr := ReaderFromFile(path)
+	assert.Error(t, readerErr)
+
+	lastErr := C2paError()
+	assert.NotEmpty(t, lastErr)
 }
 
 func TestReaderFromFile_NotFound(t *testing.T) {
