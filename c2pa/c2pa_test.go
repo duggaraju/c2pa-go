@@ -1,7 +1,7 @@
 //go:build linux && cgo
 // +build linux,cgo
 
-package lib
+package c2pa
 
 import (
 	"os"

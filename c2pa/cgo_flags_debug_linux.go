@@ -1,7 +1,7 @@
 //go:build linux && !release
 // +build linux,!release
 
-package lib
+package c2pa
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../c2pa-rs/target/debug

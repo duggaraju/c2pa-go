@@ -1,4 +1,4 @@
-package lib
+package c2pa
 
 //#include <c2pa.h>
 import "C"
@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"unsafe"
 
-	schema "github.com/duggaraju/c2pa-go/schema"
+	schema "github.com/duggaraju/c2pa-go/c2pa/schema"
 )
 
 // Reader wraps a C C2paReader*.

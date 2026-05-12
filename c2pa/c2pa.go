@@ -1,4 +1,4 @@
-package lib
+package c2pa
 
 /*
 #include <c2pa.h>

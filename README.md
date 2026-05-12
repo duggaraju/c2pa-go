@@ -1,14 +1,17 @@
 # c2pa-go
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/duggaraju/c2pa-go/lib.svg)](https://pkg.go.dev/github.com/duggaraju/c2pa-go/lib)
-[![Go Report Card](https://goreportcard.com/badge/github.com/duggaraju/c2pa-go/lib)](https://goreportcard.com/report/github.com/duggaraju/c2pa-go/lib)
+[![Go Reference](https://pkg.go.dev/badge/github.com/duggaraju/c2pa-go/c2pa.svg)](https://pkg.go.dev/github.com/duggaraju/c2pa-go/c2pa)
+[![Go Report Card](https://goreportcard.com/badge/github.com/duggaraju/c2pa-go/c2pa)](https://goreportcard.com/report/github.com/duggaraju/c2pa-go/c2pa)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![c2pa-rs](https://img.shields.io/badge/c2pa--rs-v0.83.0-orange?logo=rust)](https://github.com/contentauth/c2pa-rs)
 
 Go bindings for the [c2pa-rs](https://github.com/contentauth/c2pa-rs) Content
 Authenticity SDK. This package exposes the C2PA reader, builder, signer and
 settings APIs through cgo so that Go programs can read, create and sign
-[C2PA](https://c2pa.org) manifests.
+[C2PA](https://c2pa.org) manifests (also known as Content Credentials), adding
+Content Authenticity and Content Integrity metadata to media assets.
+
+**Keywords:** c2pa, c2pa-go,  c2pa-rs, Content Authenticity, Content Integrity, Content Credentials, content provenance.
 
 The bindings track c2pa-rs `0.83.x` and link against the `c2pa_c` shared library
 produced by the `c2pa_c_ffi` crate.
@@ -24,10 +27,11 @@ produced by the `c2pa_c_ffi` crate.
 ## Repository layout
 
 ```
-lib/        Go package (module github.com/duggaraju/c2pa-go/lib)
-example/    Sample CLI that reads and signs assets
-schema/     Generated Go types from the c2pa JSON schemas
-c2pa-rs/    Pinned upstream submodule built into the c2pa_c static lib
+c2pa/           Go package (module github.com/duggaraju/c2pa-go/c2pa)
+c2pa/schema/    Generated Go types from the c2pa JSON schemas
+                (package github.com/duggaraju/c2pa-go/c2pa/schema)
+example/        Sample CLI that reads and signs assets
+c2pa-rs/        Pinned upstream submodule built into the c2pa_c static lib
 ```
 
 ## Requirements
@@ -36,7 +40,7 @@ c2pa-rs/    Pinned upstream submodule built into the c2pa_c static lib
 - A C toolchain (`gcc`/`clang`) with `cgo` enabled
 - Rust toolchain (only required to rebuild `c2pa-rs`)
 - `git submodule update --init --recursive` for the pinned c2pa-rs checkout
-- `node`/`npx` (only required to regenerate the `schema/` package)
+- `node`/`npx` (only required to regenerate the `c2pa/schema/` package)
 
 ## Building
 
@@ -46,47 +50,47 @@ The repo uses `go:generate` for every build artifact that isn't pure Go.
 git submodule update --init --recursive
 
 # Build the c2pa-rs C FFI static library (debug + release) into c2pa-rs/target/.
-go generate ./lib/...
+go generate ./c2pa/...
 
 # Build the bindings and the example CLI.
-go build ./lib                       # debug
-go build -tags=release ./lib         # release
+go build ./c2pa                       # debug
+go build -tags=release ./c2pa         # release
 (cd example && go build .)
 ```
 
-The `go:generate` directives in [lib/generate.go](lib/generate.go) regenerate
-the [schema](schema) package and run `cargo build --features rust_native_crypto,http`
+The `go:generate` directives in [c2pa/generate.go](c2pa/generate.go) regenerate
+the [c2pa/schema](c2pa/schema) package and run `cargo build --features rust_native_crypto,http`
 inside `c2pa-rs/c2pa_c_ffi` for both debug and release profiles. The cgo flag
-files in [lib](lib) point the linker at `c2pa-rs/target/{debug,release}`.
+files in [c2pa](c2pa) point the linker at `c2pa-rs/target/{debug,release}`.
 
 ### Regenerating the schema package
 
-The Go types in [schema/schema.go](schema/schema.go) are produced from the JSON
-schemas emitted by the upstream `export_schema` Rust binary. The generated file
-is checked in so that consumers of this module do not need Rust or Node
-installed. To refresh it after bumping c2pa-rs:
+The Go types in [c2pa/schema/schema.go](c2pa/schema/schema.go) are produced from
+the JSON schemas emitted by the upstream `export_schema` Rust binary. The
+generated file is checked in so that consumers of this module do not need Rust
+or Node installed. To refresh it after bumping c2pa-rs:
 
 ```sh
-go generate ./schema/...
+go generate ./c2pa/schema/...
 ```
 
 This runs `cargo run` for `c2pa-rs/export_schema`, rewrites the top-level
 schema titles to `ManifestDefinition` and `ManifestStore`, and runs
-`quicktype` (via `npx`) to emit [schema/schema.go](schema/schema.go).
+`quicktype` (via `npx`) to emit [c2pa/schema/schema.go](c2pa/schema/schema.go).
 
 In your own Go module, add the package as a dependency:
 
 ```sh
-go get github.com/duggaraju/c2pa-go/lib
+go get github.com/duggaraju/c2pa-go/c2pa
 ```
 
 You will still need a built `libc2pa_c` available at link time. The cgo flag
-files in [lib](lib) point at `c2pa-rs/target/{debug,release}`; adjust them for
+files in [c2pa](c2pa) point at `c2pa-rs/target/{debug,release}`; adjust them for
 your deployment if you ship the shared library elsewhere.
 
 ## Usage
 
-All operations are scoped to a `*lib.Context`. A context optionally carries
+All operations are scoped to a `*c2pa.Context`. A context optionally carries
 `Settings` (trust list, verification policy, builder defaults, etc.).
 
 ### Reading a manifest
@@ -98,17 +102,17 @@ import (
     "fmt"
     "log"
 
-    "github.com/duggaraju/c2pa-go/lib"
+    c2pa "github.com/duggaraju/c2pa-go/c2pa"
 )
 
 func main() {
-    ctx, err := lib.NewContext()
+    ctx, err := c2pa.NewContext()
     if err != nil {
         log.Fatal(err)
     }
     defer ctx.Close()
 
-    r, err := lib.ReaderFromFile(ctx, "signed.jpg")
+    r, err := c2pa.ReaderFromFile(ctx, "signed.jpg")
     if err != nil {
         log.Fatal(err)
     }
@@ -122,12 +126,12 @@ func main() {
 ### Loading settings from TOML
 
 ```go
-builder, err := lib.NewContextBuilder()
+builder, err := c2pa.NewContextBuilder()
 if err != nil { log.Fatal(err) }
 defer builder.Close()
 
 content, _ := os.ReadFile("settings.toml")
-settings, err := lib.NewSettings()
+settings, err := c2pa.NewSettings()
 if err != nil { log.Fatal(err) }
 defer settings.Close()
 
@@ -145,7 +149,7 @@ defer ctx.Close()
 
 ### Signing an asset
 
-Provide a manifest definition and an implementation of `lib.Signer`. The
+Provide a manifest definition and an implementation of `c2pa.Signer`. The
 binding will invoke `Sign` via a cgo callback when c2pa-rs needs a COSE
 signature over the claim bytes.
 
@@ -155,7 +159,7 @@ manifestJson := `{
   "title": "example.jpg"
 }`
 
-builder, err := lib.BuilderFromJson(ctx, manifestJson)
+builder, err := c2pa.BuilderFromJson(ctx, manifestJson)
 if err != nil { log.Fatal(err) }
 defer builder.Close()
 
@@ -174,7 +178,7 @@ type MyPs256Signer struct {
     key      *rsa.PrivateKey
 }
 
-func (s *MyPs256Signer) Alg() lib.SigningAlg     { return lib.SigningAlgPs256 }
+func (s *MyPs256Signer) Alg() c2pa.SigningAlg     { return c2pa.SigningAlgPs256 }
 func (s *MyPs256Signer) Certificates() string    { return s.certsPEM }
 func (s *MyPs256Signer) TimeStampUrl() string    { return "" }
 
@@ -200,7 +204,7 @@ c2pa-rs embeds in the COSE `x5chain` header.
 Beyond `Sign`, `Builder` exposes most of the upstream API:
 
 ```go
-builder.SetIntent(lib.IntentCreate, lib.SourceDigitalCapture)
+builder.SetIntent(c2pa.IntentCreate, c2pa.SourceDigitalCapture)
 builder.SetRemoteUrl("https://example.com/manifest.c2pa")
 builder.SetNoEmbed()
 builder.AddAction(`{"action":"c2pa.color_adjustments"}`)
@@ -216,6 +220,107 @@ fmt.Println(r.Json())          // summary JSON
 fmt.Println(r.DetailedJson())  // detailed JSON
 fmt.Println(r.RemoteUrl())     // "" if remote-only
 r.ResourceToFile("self#jumbf=c2pa.assertions/c2pa.thumbnail", "thumb.jpg")
+```
+
+### Typed APIs
+
+In addition to the raw JSON entry points, the bindings expose Go types
+generated from the upstream JSON schemas in the
+[`schema`](https://pkg.go.dev/github.com/duggaraju/c2pa-go/c2pa/schema)
+subpackage. Use them when you would rather build manifests, parse manifest
+stores, or configure settings with statically typed values instead of hand-
+written JSON strings.
+
+```go
+import (
+    c2pa "github.com/duggaraju/c2pa-go/c2pa"
+    "github.com/duggaraju/c2pa-go/c2pa/schema"
+)
+```
+
+#### Typed manifest definition
+
+`BuilderFromDefinition` accepts a `*schema.ManifestDefinition` and marshals it
+internally before handing it to c2pa-rs:
+
+```go
+title := "example.jpg"
+format := "image/jpeg"
+vendor := "my-app"
+
+def := &schema.ManifestDefinition{
+    Title:  &title,
+    Format: &format,
+    Vendor: &vendor,
+    ClaimGeneratorInfo: []schema.ClaimGeneratorInfoElement{{
+        Name:    "my-app",
+        Version: ptr("1.0.0"),
+    }},
+    Assertions: []schema.AssertionElement{{
+        Label: "c2pa.actions",
+        Data: map[string]any{
+            "actions": []map[string]any{{"action": "c2pa.created"}},
+        },
+    }},
+}
+
+builder, err := c2pa.BuilderFromDefinition(ctx, def)
+if err != nil { log.Fatal(err) }
+defer builder.Close()
+
+// Add an extra action assertion from a typed value.
+builder.AddActionTyped(map[string]any{"action": "c2pa.color_adjustments"})
+```
+
+#### Typed manifest store (Reader)
+
+`Reader.Manifest` and `Reader.DetailedManifest` return a parsed
+`*schema.ManifestStore` rather than a JSON string:
+
+```go
+store, err := r.Manifest()
+if err != nil { log.Fatal(err) }
+
+if store.ActiveManifest != nil {
+    active := store.Manifests[*store.ActiveManifest]
+    if active.Title != nil {
+        fmt.Println("title:", *active.Title)
+    }
+    for _, a := range active.Assertions {
+        fmt.Println("assertion:", a.Label)
+    }
+}
+
+if store.ValidationState != nil {
+    fmt.Println("state:", *store.ValidationState)
+}
+```
+
+#### Typed settings
+
+`Settings.UpdateFrom` accepts a `*schema.Settings` value:
+
+```go
+settings, err := c2pa.NewSettings()
+if err != nil { log.Fatal(err) }
+defer settings.Close()
+
+typed := &schema.Settings{
+    Verify: &schema.Verify{
+        VerifyAfterReading: ptr(true),
+        VerifyTrust:        ptr(true),
+    },
+}
+if err := settings.UpdateFrom(typed); err != nil {
+    log.Fatal(err)
+}
+```
+
+A tiny helper for taking the address of a literal is convenient since most
+schema fields are pointers (so the JSON `omitempty` semantics are preserved):
+
+```go
+func ptr[T any](v T) *T { return &v }
 ```
 
 ## Example CLI

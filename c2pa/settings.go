@@ -1,4 +1,4 @@
-package lib
+package c2pa
 
 // #include <c2pa.h>
 import "C"
@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"unsafe"
 
-	schema "github.com/duggaraju/c2pa-go/schema"
+	schema "github.com/duggaraju/c2pa-go/c2pa/schema"
 )
 
 // Settings wraps a C2paSettings*. It is used to configure a ContextBuilder via

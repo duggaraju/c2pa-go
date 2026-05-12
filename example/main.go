@@ -14,7 +14,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/duggaraju/c2pa-go/lib"
+	"github.com/duggaraju/c2pa-go/c2pa"
 )
 
 const DEFAULT_MANIFEST = "{}"
@@ -27,7 +27,7 @@ func main() {
 
 	// Support a global version flag as first argument: -v or --version
 	if os.Args[1] == "-v" || os.Args[1] == "--version" {
-		fmt.Printf("version: %s\n", lib.CpaVersion())
+		fmt.Printf("version: %s\n", c2pa.CpaVersion())
 		return
 	}
 
@@ -84,10 +84,10 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  sign  -i <file> -o <file> [-m <manifest>]   Sign the input file (placeholder)")
 }
 
-// createContext builds a *lib.Context using settings loaded from the given
+// createContext builds a *c2pa.Context using settings loaded from the given
 // TOML file. If the file does not exist, defaults are used.
-func createContext(settingsPath string) (*lib.Context, error) {
-	builder, err := lib.NewContextBuilder()
+func createContext(settingsPath string) (*c2pa.Context, error) {
+	builder, err := c2pa.NewContextBuilder()
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func createContext(settingsPath string) (*lib.Context, error) {
 
 	if settingsPath != "" {
 		if content, err := os.ReadFile(settingsPath); err == nil {
-			settings, err := lib.NewSettings()
+			settings, err := c2pa.NewSettings()
 			if err != nil {
 				return nil, err
 			}
@@ -114,8 +114,8 @@ func createContext(settingsPath string) (*lib.Context, error) {
 	return builder.Build()
 }
 
-func handleRead(ctx *lib.Context, path string) {
-	r, err := lib.ReaderFromFile(ctx, path)
+func handleRead(ctx *c2pa.Context, path string) {
+	r, err := c2pa.ReaderFromFile(ctx, path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to open reader: %v", err)
 		return
@@ -126,7 +126,7 @@ func handleRead(ctx *lib.Context, path string) {
 	fmt.Println(json)
 }
 
-func handleSign(ctx *lib.Context, input, output, manifest, certificates, key string) {
+func handleSign(ctx *c2pa.Context, input, output, manifest, certificates, key string) {
 	_, err := os.Stat(manifest)
 	if errors.Is(err, os.ErrNotExist) {
 		manifest = DEFAULT_MANIFEST
@@ -137,7 +137,7 @@ func handleSign(ctx *lib.Context, input, output, manifest, certificates, key str
 		}
 		manifest = string(content)
 	}
-	builder, err := lib.BuilderFromJson(ctx, manifest)
+	builder, err := c2pa.BuilderFromJson(ctx, manifest)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create builder: %v", err)
 	}
@@ -227,8 +227,8 @@ func (s *TestSigner) Sign(input []byte, output []byte) (int, error) {
 	return copy(output, sig), nil
 }
 
-func (s *TestSigner) Alg() lib.SigningAlg {
-	return lib.SigningAlgPs256
+func (s *TestSigner) Alg() c2pa.SigningAlg {
+	return c2pa.SigningAlgPs256
 }
 
 func (s *TestSigner) TimeStampUrl() string {

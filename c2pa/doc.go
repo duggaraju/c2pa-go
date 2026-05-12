@@ -1,15 +1,20 @@
-// Package lib provides Go bindings for the c2pa-rs Content Authenticity SDK.
+// Package c2pa provides Go bindings for the c2pa-rs Content Authenticity SDK.
+//
+// Keywords: c2pa, c2pa-go, c2pa-rs, Content Authenticity, Content Integrity, Content Credentials, content provenance.
 //
 // The package exposes the C2PA reader, builder, signer, settings and context
-// APIs through cgo so Go programs can read, create and sign C2PA manifests on
-// any asset format that c2pa-rs supports (JPEG, PNG, TIFF, MP4, and others).
+// APIs through cgo so Go programs can read, create and sign C2PA manifests
+// (also known as Content Credentials) on any asset format that c2pa-rs
+// supports (JPEG, PNG, TIFF, MP4, and others). Use it to add Content
+// Authenticity / Content Integrity metadata to media assets and to verify
+// existing C2PA manifests.
 //
 // All operations are scoped to a [Context]. A context optionally carries
 // [Settings] (trust list, verification policy, builder defaults, etc.). Create
 // a context either with [NewContext] for defaults, or via
 // [NewContextBuilder] when you need to attach settings:
 //
-//	ctx, err := lib.NewContext()
+//	ctx, err := c2pa.NewContext()
 //	if err != nil { ... }
 //	defer ctx.Close()
 //
@@ -18,7 +23,7 @@
 // Use [ReaderFromFile] (or [NewReader] with a stream) to inspect manifests
 // embedded in or accompanying an asset:
 //
-//	r, err := lib.ReaderFromFile(ctx, "signed.jpg")
+//	r, err := c2pa.ReaderFromFile(ctx, "signed.jpg")
 //	if err != nil { ... }
 //	defer r.Close()
 //	fmt.Println(r.Json())
@@ -28,7 +33,7 @@
 // Implement the [Signer] interface (or wrap your own signing callback) and
 // drive [Builder.Sign]:
 //
-//	b, err := lib.BuilderFromJson(ctx, manifestJson)
+//	b, err := c2pa.BuilderFromJson(ctx, manifestJson)
 //	if err != nil { ... }
 //	defer b.Close()
 //	manifest, err := b.Sign("in.jpg", "out.jpg", signer)
@@ -40,4 +45,4 @@
 //
 // This package links against the c2pa_c shared/static library built from the
 // c2pa-rs c2pa_c_ffi crate. See the project README for build instructions.
-package lib
+package c2pa
