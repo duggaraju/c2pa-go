@@ -26,9 +26,8 @@ produced by the `c2pa_c_ffi` crate.
 ```
 lib/        Go package (module github.com/duggaraju/c2pa-go/lib)
 example/    Sample CLI that reads and signs assets
-schema/     Generated Go types from the c2pa JSON schemas (Work in progress)
-c2pa-rs/    Pinned upstream submodule built into the c2pa_c shared lib
-build.sh    Convenience build script (cargo + go)
+schema/     Generated Go types from the c2pa JSON schemas
+c2pa-rs/    Pinned upstream submodule built into the c2pa_c static lib
 ```
 
 ## Requirements
@@ -37,17 +36,43 @@ build.sh    Convenience build script (cargo + go)
 - A C toolchain (`gcc`/`clang`) with `cgo` enabled
 - Rust toolchain (only required to rebuild `c2pa-rs`)
 - `git submodule update --init --recursive` for the pinned c2pa-rs checkout
+- `node`/`npx` (only required to regenerate the `schema/` package)
 
 ## Building
 
+The repo uses `go:generate` for every build artifact that isn't pure Go.
+
 ```sh
 git submodule update --init --recursive
-./build.sh            # debug build
-./build.sh release    # release build (-tags=release)
+
+# Build the c2pa-rs C FFI static library (debug + release) into c2pa-rs/target/.
+go generate ./lib/...
+
+# Build the bindings and the example CLI.
+go build ./lib                       # debug
+go build -tags=release ./lib         # release
+(cd example && go build .)
 ```
 
-`build.sh` runs `cargo build --features rust_native_crypto,http` inside
-`c2pa-rs/c2pa_c_ffi` and then `go build` for both `lib` and `example`.
+The `go:generate` directives in [lib/generate.go](lib/generate.go) regenerate
+the [schema](schema) package and run `cargo build --features rust_native_crypto,http`
+inside `c2pa-rs/c2pa_c_ffi` for both debug and release profiles. The cgo flag
+files in [lib](lib) point the linker at `c2pa-rs/target/{debug,release}`.
+
+### Regenerating the schema package
+
+The Go types in [schema/schema.go](schema/schema.go) are produced from the JSON
+schemas emitted by the upstream `export_schema` Rust binary. The generated file
+is checked in so that consumers of this module do not need Rust or Node
+installed. To refresh it after bumping c2pa-rs:
+
+```sh
+go generate ./schema/...
+```
+
+This runs `cargo run` for `c2pa-rs/export_schema`, rewrites the top-level
+schema titles to `ManifestDefinition` and `ManifestStore`, and runs
+`quicktype` (via `npx`) to emit [schema/schema.go](schema/schema.go).
 
 In your own Go module, add the package as a dependency:
 

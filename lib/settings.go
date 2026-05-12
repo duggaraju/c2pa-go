@@ -4,8 +4,11 @@ package lib
 import "C"
 
 import (
+	"encoding/json"
 	"fmt"
 	"unsafe"
+
+	schema "github.com/duggaraju/c2pa-go/schema"
 )
 
 // Settings wraps a C2paSettings*. It is used to configure a ContextBuilder via
@@ -61,4 +64,17 @@ func (s *Settings) SetValue(path, jsonValue string) error {
 		return fmt.Errorf("failed to set settings value: %s", C2paError())
 	}
 	return nil
+}
+
+// UpdateFrom applies a typed schema.Settings value by marshaling it to
+// JSON and calling UpdateFromString.
+func (s *Settings) UpdateFrom(settings *schema.Settings) error {
+	if settings == nil {
+		return fmt.Errorf("settings is nil")
+	}
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return fmt.Errorf("failed to marshal settings: %w", err)
+	}
+	return s.UpdateFromString(string(data), "json")
 }

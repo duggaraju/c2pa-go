@@ -4,10 +4,13 @@ package lib
 import "C"
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"unsafe"
+
+	schema "github.com/duggaraju/c2pa-go/schema"
 )
 
 // Builder wraps a C C2paBuilder*.
@@ -293,4 +296,23 @@ func BuilderFromArchiveFile(ctx *Context, path string) (*Builder, error) {
 	}
 	defer f.Close()
 	return BuilderFromArchive(ctx, f)
+}
+
+// BuilderFromDefinition creates a Builder from a typed ManifestDefinition.
+// It marshals the definition to JSON and forwards it to BuilderFromJson.
+func BuilderFromDefinition(ctx *Context, def *schema.ManifestDefinition) (*Builder, error) {
+	data, err := json.Marshal(def)
+	if err != nil {
+		return nil, err
+	}
+	return BuilderFromJson(ctx, string(data))
+}
+
+// AddActionTyped marshals action to JSON and adds it as an action assertion.
+func (b *Builder) AddActionTyped(action any) error {
+	data, err := json.Marshal(action)
+	if err != nil {
+		return err
+	}
+	return b.AddAction(string(data))
 }

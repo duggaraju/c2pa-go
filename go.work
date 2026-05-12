@@ -3,4 +3,5 @@ go 1.24.7
 use (
 	./example
 	./lib
+	./schema
 )

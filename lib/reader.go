@@ -4,10 +4,13 @@ package lib
 import "C"
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"unsafe"
+
+	schema "github.com/duggaraju/c2pa-go/schema"
 )
 
 // Reader wraps a C C2paReader*.
@@ -129,4 +132,24 @@ func ReaderFromFile(ctx *Context, path string) (*Reader, error) {
 		return nil, fmt.Errorf("failed to configure c2pa reader for %s: %s", path, C2paError())
 	}
 	return &Reader{ptr: reader}, nil
+}
+
+// Manifest returns the manifest store parsed into the typed schema.ManifestStore
+// representation.
+func (r *Reader) Manifest() (*schema.ManifestStore, error) {
+	var out schema.ManifestStore
+	if err := json.Unmarshal([]byte(r.Json()), &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DetailedManifest returns the detailed manifest store parsed into the typed
+// schema.ManifestStore representation.
+func (r *Reader) DetailedManifest() (*schema.ManifestStore, error) {
+	var out schema.ManifestStore
+	if err := json.Unmarshal([]byte(r.DetailedJson()), &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }

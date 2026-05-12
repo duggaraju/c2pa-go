@@ -1,5 +1,3 @@
-module c2pa.org/schema
+module github.com/duggaraju/c2pa-go/schema
 
-go 1.24.7
-
-require github.com/a-h/generate v0.0.0-20220105161013-96c14dfdfb60 // indirect
+go 1.24.0
