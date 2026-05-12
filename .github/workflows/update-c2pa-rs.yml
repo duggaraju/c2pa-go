@@ -1,0 +1,111 @@
+name: Update c2pa-rs submodule
+
+on:
+  schedule:
+    # Daily at 06:00 UTC.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'c2pa-rs ref to pin to (branch, tag or SHA). Defaults to remote HEAD of the submodule.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          # Use a token that can push branches and open PRs.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Determine current submodule SHA
+        id: current
+        run: |
+          set -euo pipefail
+          cur=$(git -C c2pa-rs rev-parse HEAD)
+          echo "sha=$cur" >> "$GITHUB_OUTPUT"
+          echo "Current c2pa-rs SHA: $cur"
+
+      - name: Update c2pa-rs submodule
+        id: update
+        run: |
+          set -euo pipefail
+          REF='${{ github.event.inputs.ref }}'
+          cd c2pa-rs
+          git fetch --tags origin
+          if [ -n "$REF" ]; then
+            git checkout "$REF"
+          else
+            # Track the default upstream branch.
+            default_branch=$(git remote show origin | sed -n 's/.*HEAD branch: //p')
+            git checkout "$default_branch"
+            git pull --ff-only origin "$default_branch"
+          fi
+          new=$(git rev-parse HEAD)
+          echo "sha=$new" >> "$GITHUB_OUTPUT"
+          ver=$(grep -m1 '^version' Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          short=$(git rev-parse --short HEAD)
+          echo "short=$short" >> "$GITHUB_OUTPUT"
+
+      - name: Detect changes
+        id: diff
+        run: |
+          set -euo pipefail
+          if [ '${{ steps.current.outputs.sha }}' = '${{ steps.update.outputs.sha }}' ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "c2pa-rs submodule is already up to date."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update README c2pa-rs version references
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          VER: ${{ steps.update.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Update the shields.io badge (e.g. c2pa--rs-v0.83.0-orange).
+          sed -i -E "s|c2pa--rs-v[0-9]+\.[0-9]+\.[0-9]+-orange|c2pa--rs-v${VER}-orange|g" README.md
+          # Update prose like: "track c2pa-rs `0.83.x`"
+          major_minor=$(echo "$VER" | awk -F. '{print $1"."$2}')
+          sed -i -E "s|track c2pa-rs \`[0-9]+\.[0-9]+\.x\`|track c2pa-rs \`${major_minor}.x\`|g" README.md
+
+      - name: Create pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: bot/update-c2pa-rs
+          delete-branch: true
+          commit-message: |
+            chore(c2pa-rs): bump submodule to ${{ steps.update.outputs.short }} (v${{ steps.update.outputs.version }})
+          title: 'chore(c2pa-rs): bump submodule to v${{ steps.update.outputs.version }} (${{ steps.update.outputs.short }})'
+          body: |
+            Automated update of the `c2pa-rs` submodule.
+
+            - Previous: `${{ steps.current.outputs.sha }}`
+            - New: `${{ steps.update.outputs.sha }}`
+            - Upstream version: `v${{ steps.update.outputs.version }}`
+
+            README references have been updated to match.
+          labels: |
+            dependencies
+            automated
+          add-paths: |
+            c2pa-rs
+            README.md

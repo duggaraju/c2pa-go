@@ -3,44 +3,127 @@ name: CI
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*', 'c2pa/v*' ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  build-test-publish:
+  build-test:
     runs-on: ubuntu-latest
     env:
       GO_VERSION: '1.25.x'
-      RUST_VERSION: 'stable'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: |
+            c2pa/go.sum
+            example/go.sum
 
       - name: Set up Rust
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-          profile: minimal
-          override: true
+          toolchain: stable
+          cache: true
+          cache-workspaces: c2pa-rs
 
-      - name: Build Rust (release)
-        run: cd c2pa-rs/c2pa_c_ffi && cargo build --features rust_native_crypto --release
+      - name: Set up Node.js (for quicktype schema generation)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-      - name: Build Go
-        run: go build ./lib ./example
+      - name: Run go generate
+        # Regenerates ./c2pa/schema and builds c2pa-rs/c2pa_c_ffi (debug + release)
+        # via the go:generate directives in c2pa/generate.go.
+        run: go generate ./c2pa/...
 
-      - name: Run Go tests
-        run: go test ./lib
+      - name: Go vet (release)
+        run: go vet -tags=release ./c2pa/...
 
-      - name: Publish Go package
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      - name: Go build (release)
         run: |
-          echo "Publishing Go package (placeholder)"
-          # Add your actual publish step here, e.g. 'go install', 'goreleaser', or push to a registry
+          go build -tags=release ./c2pa
+          go build -tags=release ./example
+
+      - name: Go test (release)
+        run: go test -tags=release -v ./c2pa/...
+
+      - name: Stage release binaries
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp c2pa-rs/target/release/libc2pa_c.* dist/ 2>/dev/null || true
+          cp c2pa-rs/target/release/c2pa.h     dist/ 2>/dev/null || true
+          (cd dist && ls -la)
+
+      - name: Upload release binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: c2pa-c-libs-release-${{ runner.os }}-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Tag & publish Go module
+    needs: build-test
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+
+      - name: Validate tag format
+        run: |
+          set -euo pipefail
+          tag='${{ github.ref_name }}'
+          echo "Releasing tag: $tag"
+          case "$tag" in
+            c2pa/v*|v*) echo "Tag format OK";;
+            *) echo "Unexpected tag format: $tag"; exit 1;;
+          esac
+
+      - name: Prime proxy.golang.org
+        run: |
+          set -euo pipefail
+          tag='${{ github.ref_name }}'
+          ver="${tag#c2pa/}"
+          # Best-effort: ask the Go module proxy to fetch the new tag so the
+          # module version becomes resolvable via `go get`.
+          curl -fsSL "https://proxy.golang.org/github.com/duggaraju/c2pa-go/c2pa/@v/${ver}.info" || true
+          go list -m -versions github.com/duggaraju/c2pa-go/c2pa || true
+
+      - name: Download release binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: c2pa-c-libs-release-*-${{ github.sha }}
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            dist/*
