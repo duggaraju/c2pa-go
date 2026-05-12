@@ -26,7 +26,11 @@ func TestC2paError_AfterReaderFailure(t *testing.T) {
 	err := os.WriteFile(path, nil, 0o644)
 	assert.NoError(t, err)
 
-	_, readerErr := ReaderFromFile(path)
+	ctx, ctxErr := NewContext()
+	assert.NoError(t, ctxErr)
+	defer ctx.Close()
+
+	_, readerErr := ReaderFromFile(ctx, path)
 	assert.Error(t, readerErr)
 
 	lastErr := C2paError()
@@ -34,16 +38,24 @@ func TestC2paError_AfterReaderFailure(t *testing.T) {
 }
 
 func TestReaderFromFile_NotFound(t *testing.T) {
-	_, err := ReaderFromFile("/nonexistent/file/path.jpg")
+	ctx, err := NewContext()
+	assert.NoError(t, err)
+	defer ctx.Close()
+
+	_, err = ReaderFromFile(ctx, "/nonexistent/file/path.jpg")
 	if err == nil {
 		t.Error("ReaderFromFile should fail for nonexistent file")
 	}
 }
 
 func TestReaderFromFile_Valid(t *testing.T) {
+	ctx, ctxErr := NewContext()
+	assert.NoError(t, ctxErr)
+	defer ctx.Close()
+
 	// This test expects a valid test file at testdata/test.jpg
 	path := "../c2pa-rs/sdk/tests/fixtures/C.jpg"
-	r, err := ReaderFromFile(path)
+	r, err := ReaderFromFile(ctx, path)
 	assert.NotNil(t, r)
 	assert.NotEmpty(t, r.Json())
 	assert.Nil(t, err)

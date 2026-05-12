@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/pem"
 	"errors"
 	"flag"
@@ -34,6 +35,7 @@ func main() {
 
 	readCmd := flag.NewFlagSet("read", flag.ExitOnError)
 	readIn := readCmd.String("i", "", "input file (required)")
+	readSettings := readCmd.String("s", "settings.toml", "settings file (TOML)")
 
 	signCmd := flag.NewFlagSet("sign", flag.ExitOnError)
 	signIn := signCmd.String("i", "", "input file (required)")
@@ -41,6 +43,7 @@ func main() {
 	signManifest := signCmd.String("m", "", "manifest file (required)")
 	certificates := signCmd.String("c", "", "certificate file (required)")
 	key := signCmd.String("k", "", "key file (required)")
+	signSettings := signCmd.String("s", "settings.toml", "settings file (TOML)")
 
 	switch sub {
 	case "read":
@@ -48,7 +51,12 @@ func main() {
 		if *readIn == "" {
 			log.Fatalf("read: -i is required")
 		}
-		handleRead(*readIn)
+		ctx, err := createContext(*readSettings)
+		if err != nil {
+			log.Fatalf("failed to create context: %v", err)
+		}
+		defer ctx.Close()
+		handleRead(ctx, *readIn)
 	case "sign":
 		signCmd.Parse(os.Args[2:])
 		if *signIn == "" {
@@ -57,8 +65,12 @@ func main() {
 		if *signOut == "" {
 			log.Fatalf("sign: -o is required")
 		}
-
-		handleSign(*signIn, *signOut, *signManifest, *certificates, *key)
+		ctx, err := createContext(*signSettings)
+		if err != nil {
+			log.Fatalf("failed to create context: %v", err)
+		}
+		defer ctx.Close()
+		handleSign(ctx, *signIn, *signOut, *signManifest, *certificates, *key)
 	default:
 		usage()
 		os.Exit(2)
@@ -72,10 +84,41 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  sign  -i <file> -o <file> [-m <manifest>]   Sign the input file (placeholder)")
 }
 
-func handleRead(path string) {
-	r, err := lib.ReaderFromFile(path)
+// createContext builds a *lib.Context using settings loaded from the given
+// TOML file. If the file does not exist, defaults are used.
+func createContext(settingsPath string) (*lib.Context, error) {
+	builder, err := lib.NewContextBuilder()
+	if err != nil {
+		return nil, err
+	}
+	defer builder.Close()
+
+	if settingsPath != "" {
+		if content, err := os.ReadFile(settingsPath); err == nil {
+			settings, err := lib.NewSettings()
+			if err != nil {
+				return nil, err
+			}
+			defer settings.Close()
+			if err := settings.UpdateFromString(string(content), "toml"); err != nil {
+				return nil, fmt.Errorf("failed to load settings %s: %w", settingsPath, err)
+			}
+			if err := builder.SetSettings(settings); err != nil {
+				return nil, err
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("failed to read settings %s: %w", settingsPath, err)
+		}
+	}
+
+	return builder.Build()
+}
+
+func handleRead(ctx *lib.Context, path string) {
+	r, err := lib.ReaderFromFile(ctx, path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to open reader: %v", err)
+		return
 	}
 	defer r.Close()
 
@@ -83,7 +126,7 @@ func handleRead(path string) {
 	fmt.Println(json)
 }
 
-func handleSign(input, output, manifest, certificates, key string) {
+func handleSign(ctx *lib.Context, input, output, manifest, certificates, key string) {
 	_, err := os.Stat(manifest)
 	if errors.Is(err, os.ErrNotExist) {
 		manifest = DEFAULT_MANIFEST
@@ -94,8 +137,7 @@ func handleSign(input, output, manifest, certificates, key string) {
 		}
 		manifest = string(content)
 	}
-
-	builder, err := lib.BuilderFromJson(manifest)
+	builder, err := lib.BuilderFromJson(ctx, manifest)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create builder: %v", err)
 	}
@@ -136,14 +178,9 @@ func CreateTestSigner(cert string, key string) (*TestSigner, error) {
 		return nil, fmt.Errorf("failed to decode PEM block")
 	}
 
-	privateKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	rsaKey, err := parseRSAPrivateKey(block.Bytes)
 	if err != nil {
 		return nil, err
-	}
-
-	rsaKey, ok := privateKey.(*rsa.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("key is not an RSA private key")
 	}
 
 	return &TestSigner{
@@ -151,16 +188,43 @@ func CreateTestSigner(cert string, key string) (*TestSigner, error) {
 		key:          rsaKey,
 	}, nil
 }
-func (s *TestSigner) Sign(input []byte, output []byte) (int, error) {
 
-	// create sha256 hash of input
-	hash := sha256.Sum256(input)
-	// sign using rsa algorithm
-	_, err := rsa.SignPKCS1v15(rand.Reader, s.key, crypto.SHA256, hash[:])
-	if err != nil {
-		return 0, err
+// parseRSAPrivateKey accepts a PKCS#1 or PKCS#8 encoded RSA key. PKCS#8 keys
+// using the RSASSA-PSS OID (1.2.840.113549.1.1.10) are also accepted; the
+// inner PKCS#1 RSAPrivateKey is parsed directly.
+func parseRSAPrivateKey(der []byte) (*rsa.PrivateKey, error) {
+	if k, err := x509.ParsePKCS1PrivateKey(der); err == nil {
+		return k, nil
 	}
-	return len(input), nil
+	if k, err := x509.ParsePKCS8PrivateKey(der); err == nil {
+		if rsaKey, ok := k.(*rsa.PrivateKey); ok {
+			return rsaKey, nil
+		}
+		return nil, fmt.Errorf("key is not an RSA private key")
+	}
+	// Fallback: unwrap PKCS#8 manually for keys with RSASSA-PSS OID.
+	var pkcs8 struct {
+		Version    int
+		Algo       asn1.RawValue
+		PrivateKey []byte
+	}
+	if _, err := asn1.Unmarshal(der, &pkcs8); err != nil {
+		return nil, fmt.Errorf("failed to parse PKCS#8: %w", err)
+	}
+	return x509.ParsePKCS1PrivateKey(pkcs8.PrivateKey)
+}
+func (s *TestSigner) Sign(input []byte, output []byte) (int, error) {
+	hash := sha256.Sum256(input)
+	sig, err := rsa.SignPSS(rand.Reader, s.key, crypto.SHA256, hash[:], &rsa.PSSOptions{
+		SaltLength: rsa.PSSSaltLengthEqualsHash,
+	})
+	if err != nil {
+		return -1, err
+	}
+	if len(sig) > len(output) {
+		return -1, fmt.Errorf("output buffer too small: need %d, have %d", len(sig), len(output))
+	}
+	return copy(output, sig), nil
 }
 
 func (s *TestSigner) Alg() lib.SigningAlg {
@@ -168,7 +232,7 @@ func (s *TestSigner) Alg() lib.SigningAlg {
 }
 
 func (s *TestSigner) TimeStampUrl() string {
-	return ""
+	return "http://timestamp.digicert.com"
 }
 
 func (s *TestSigner) Certificates() string {
