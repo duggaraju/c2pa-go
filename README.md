@@ -82,10 +82,18 @@ go build -tags=release ./c2pa         # release
 The `go:generate` directives in [c2pa/generate.go](c2pa/generate.go),
 [c2pa/generate_debug.go](c2pa/generate_debug.go) and
 [c2pa/generate_release.go](c2pa/generate_release.go) regenerate the
-[c2pa/schema](c2pa/schema) package and run `cargo build --features rust_native_crypto,http`
+[c2pa/schema](c2pa/schema) package and run `cargo build --features rust_native_crypto`
 inside `c2pa-rs/c2pa_c_ffi` for the flavor matching the `-tags` passed to
 `go generate`. The cgo flag files in [c2pa](c2pa) point the linker at
 `c2pa-rs/target/{debug,release}` accordingly.
+
+The `c2pa_c` library is built **without** the optional `http` feature of
+`c2pa-c-ffi`, so the reqwest-based HTTP stack is not linked into the
+resulting library. Remote operations (remote manifest fetches, OCSP, RFC 3161
+timestamp authorities) are instead serviced by a Go-side resolver wired up
+through `ContextBuilder.SetHttpResolver` — see [HTTP resolver](#http-resolver)
+below. If you need the bundled reqwest resolver, rebuild the library with
+`cargo build --features rust_native_crypto,http`.
 
 ### Using prebuilt C libraries
 
@@ -258,6 +266,50 @@ fmt.Println(r.DetailedJson())  // detailed JSON
 fmt.Println(r.RemoteUrl())     // "" if remote-only
 r.ResourceToFile("self#jumbf=c2pa.assertions/c2pa.thumbnail", "thumb.jpg")
 ```
+
+### HTTP resolver
+
+The `c2pa_c` library is built without the reqwest-based `http` feature, so any
+operation that needs to make an HTTP request (fetching a remote manifest,
+OCSP, or an RFC 3161 timestamp) requires a Go-side resolver. Install one on
+the `ContextBuilder` before calling `Build`:
+
+```go
+builder, err := c2pa.NewContextBuilder()
+if err != nil { log.Fatal(err) }
+defer builder.Close()
+
+resolver, err := c2pa.NewHttpResolver(&c2pa.DefaultHttpResolver{
+    // Optional; defaults to http.DefaultClient.
+    Client: &http.Client{Timeout: 30 * time.Second},
+})
+if err != nil { log.Fatal(err) }
+// Keep `resolver` alive at least as long as the Context built below — it
+// owns the cgo.Handle the C side calls back into. After SetHttpResolver,
+// the C resolver pointer is consumed by the builder; Close() then only
+// releases the Go-side handle.
+defer resolver.Close()
+
+if err := builder.SetHttpResolver(resolver); err != nil {
+    log.Fatal(err)
+}
+
+ctx, err := builder.Build()
+if err != nil { log.Fatal(err) }
+defer ctx.Close()
+```
+
+For custom transport behaviour (proxying, request signing, fixtures in tests,
+etc.), implement the `c2pa.HttpResolver` interface directly:
+
+```go
+type HttpResolver interface {
+    Resolve(req *http.Request) (*http.Response, error)
+}
+```
+
+The resolver is invoked synchronously from c2pa-rs; return errors normally
+and they are surfaced through the usual `C2paError()` channel.
 
 ### Typed APIs
 

@@ -64,6 +64,31 @@ func (b *ContextBuilder) SetSettings(settings *Settings) error {
 	return nil
 }
 
+// SetHttpResolver attaches a custom HTTP resolver to the context. The builder
+// takes ownership of the underlying C resolver; the adapter's C pointer is
+// cleared so its Close() will not double-free it. The Go-side handle is still
+// released when the adapter is closed (or when the owning Context is freed,
+// if the caller keeps a reference to the adapter alive that long).
+//
+// Because the resolver is consumed on success, callers should ensure that
+// the HttpResolverAdapter (and thus its cgo.Handle) outlives any Context
+// built from this builder — typically by keeping a reference to the adapter
+// next to the Context and calling Close on both at teardown.
+func (b *ContextBuilder) SetHttpResolver(resolver *HttpResolverAdapter) error {
+	if b.ptr == nil {
+		return fmt.Errorf("context builder is closed")
+	}
+	if resolver == nil || resolver.ptr == nil {
+		return fmt.Errorf("http resolver is nil")
+	}
+	if rc := C.c2pa_context_builder_set_http_resolver(b.ptr, resolver.ptr); rc != 0 {
+		return fmt.Errorf("failed to set http resolver on context builder: %s", C2paError())
+	}
+	// The builder consumed the C resolver pointer; prevent double free.
+	resolver.ptr = nil
+	return nil
+}
+
 // Build consumes the builder and returns an immutable Context.
 func (b *ContextBuilder) Build() (*Context, error) {
 	if b.ptr == nil {

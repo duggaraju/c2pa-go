@@ -92,6 +92,14 @@ func createContext(settingsPath string) (*c2pa.Context, error) {
 		return nil, err
 	}
 	defer builder.Close()
+	resolver, err := c2pa.NewHttpResolver(&c2pa.DefaultHttpResolver{})
+	if err != nil {
+		return nil, err
+	}
+	defer resolver.Close()
+	if err := builder.SetHttpResolver(resolver); err != nil {
+		return nil, err
+	}
 
 	if settingsPath != "" {
 		if content, err := os.ReadFile(settingsPath); err == nil {

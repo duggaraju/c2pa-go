@@ -8,4 +8,4 @@
 
 package c2pa
 
-//go:generate sh -c "cd ../c2pa-rs/c2pa_c_ffi && cargo build --release --features rust_native_crypto,http"
+//go:generate sh -c "cd ../c2pa-rs/c2pa_c_ffi && cargo build --release --features rust_native_crypto"

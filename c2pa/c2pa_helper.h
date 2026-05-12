@@ -57,6 +57,16 @@ WEAK C2paStream* create_stream(uintptr_t context) {
 	return c2pa_create_stream((StreamContext*)context, stream_read, stream_seek, stream_write, stream_flush);
 }
 
+extern int GoHttpResolverCallback(uintptr_t context, C2paHttpRequest* request, C2paHttpResponse* response);
+
+WEAK int http_resolver_callback(void* context, const C2paHttpRequest* request, C2paHttpResponse* response) {
+	return GoHttpResolverCallback((uintptr_t)context, (C2paHttpRequest*)request, response);
+}
+
+WEAK C2paHttpResolver* create_http_resolver(uintptr_t context) {
+	return c2pa_http_resolver_create((const void*)context, (C2paHttpResolverCallback)http_resolver_callback);
+}
+
 #ifdef __cplusplus
 }
 #endif
