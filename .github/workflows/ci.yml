@@ -13,9 +13,22 @@ permissions:
 
 jobs:
   build-test:
-    runs-on: ubuntu-latest
+    name: build-test (${{ matrix.os }} / ${{ matrix.goarch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: linux,   goarch: amd64, runner: ubuntu-latest,     rust_toolchain: stable }
+          - { os: linux,   goarch: arm64, runner: ubuntu-24.04-arm,  rust_toolchain: stable }
+          - { os: macos,   goarch: arm64, runner: macos-latest,      rust_toolchain: stable }
+          - { os: windows, goarch: amd64, runner: windows-latest,    rust_toolchain: stable-x86_64-pc-windows-gnu }
+          - { os: windows, goarch: arm64, runner: windows-11-arm,    rust_toolchain: stable-aarch64-pc-windows-gnullvm }
     env:
       GO_VERSION: '1.25.x'
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -31,10 +44,20 @@ jobs:
             c2pa/go.sum
             example/go.sum
 
+      - name: Set up MSYS2 (windows mingw toolchain for cgo)
+        if: matrix.os == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.goarch == 'arm64' && 'CLANGARM64' || 'MINGW64' }}
+          update: false
+          install: >-
+            ${{ matrix.goarch == 'arm64' && 'mingw-w64-clang-aarch64-toolchain' || 'mingw-w64-x86_64-toolchain' }}
+          path-type: inherit
+
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ matrix.rust_toolchain }}
           cache: true
           cache-workspaces: c2pa-rs
 
@@ -43,34 +66,44 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Run go generate
-        # Regenerates ./c2pa/schema and builds c2pa-rs/c2pa_c_ffi (debug + release)
-        # via the go:generate directives in c2pa/generate.go.
-        run: go generate ./c2pa/...
+      - name: Run go generate (release)
+        # Regenerates ./c2pa/schema and builds c2pa-rs/c2pa_c_ffi for the
+        # release flavor via the go:generate directives in c2pa/generate*.go.
+        env:
+          CGO_ENABLED: '1'
+        run: go generate -tags=release ./c2pa/...
 
       - name: Go vet (release)
+        env:
+          CGO_ENABLED: '1'
         run: go vet -tags=release ./c2pa/...
 
       - name: Go build (release)
+        env:
+          CGO_ENABLED: '1'
         run: |
           go build -tags=release ./c2pa
-          go build -tags=release ./example
+          go build -tags=release -o dist/demo ./example
 
       - name: Go test (release)
+        env:
+          CGO_ENABLED: '1'
         run: go test -tags=release -v ./c2pa/...
 
       - name: Stage release binaries
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp c2pa-rs/target/release/libc2pa_c.* dist/ 2>/dev/null || true
-          cp c2pa-rs/target/release/c2pa.h     dist/ 2>/dev/null || true
-          (cd dist && ls -la)
+          cp c2pa-rs/target/release/libc2pa_c.*  dist/ 2>/dev/null || true
+          cp c2pa-rs/target/release/c2pa_c.lib   dist/ 2>/dev/null || true
+          cp c2pa-rs/target/release/c2pa_c.dll   dist/ 2>/dev/null || true
+          cp c2pa-rs/target/release/c2pa.h      dist/ 2>/dev/null || true
+          ls -la dist
 
       - name: Upload release binaries
         uses: actions/upload-artifact@v4
         with:
-          name: c2pa-c-libs-release-${{ runner.os }}-${{ github.sha }}
+          name: c2pa-c-libs-release-${{ matrix.os }}-${{ matrix.goarch }}-${{ github.sha }}
           path: dist/*
           if-no-files-found: error
           retention-days: 14
@@ -117,7 +150,18 @@ jobs:
         with:
           pattern: c2pa-c-libs-release-*-${{ github.sha }}
           path: dist
-          merge-multiple: true
+          merge-multiple: false
+
+      - name: Repackage release binaries per platform
+        run: |
+          set -euo pipefail
+          cd dist
+          for d in c2pa-c-libs-release-*-${{ github.sha }}; do
+            [ -d "$d" ] || continue
+            name="${d%-${{ github.sha }}}"
+            (cd "$d" && tar czf "../${name}.tar.gz" .)
+          done
+          ls -la
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -126,4 +170,4 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
-            dist/*
+            dist/*.tar.gz

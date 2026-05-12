@@ -21,6 +21,10 @@ produced by the `c2pa_c_ffi` crate.
 - Supported assets: anything supported by c2pa-rs (JPEG, PNG, TIFF, MP4, etc.).
 - Supported algorithms: `Ps256`/`Ps384`/`Ps512`, `Es256`/`Es384`/`Es512`,
   `Ed25519`.
+- Supported platforms (CI-built):
+  - Linux amd64, Linux arm64
+  - macOS amd64 (Intel), macOS arm64 (Apple Silicon)
+  - Windows amd64, Windows arm64 (mingw / clang-mingw toolchain via cgo)
 - Bindings are not yet API-stable; the surface may change before a tagged
   release.
 
@@ -37,20 +41,37 @@ c2pa-rs/        Pinned upstream submodule built into the c2pa_c static lib
 ## Requirements
 
 - Go 1.24+
-- A C toolchain (`gcc`/`clang`) with `cgo` enabled
+- `cgo` enabled (`CGO_ENABLED=1`) with a C toolchain:
+  - Linux: `gcc` or `clang`
+  - macOS: Xcode Command Line Tools (`xcode-select --install`)
+  - Windows: a mingw-w64 toolchain on `PATH` (e.g. MSYS2 `MINGW64` for amd64,
+    `CLANGARM64` for arm64). The MSVC `cl.exe` toolchain is **not** supported
+    by cgo.
 - Rust toolchain (only required to rebuild `c2pa-rs`)
+  - On Windows, install the **gnu** variant (`stable-x86_64-pc-windows-gnu` on
+    amd64 or `stable-aarch64-pc-windows-gnullvm` on arm64) so `cargo` emits a
+    mingw-compatible `libc2pa_c.a`. Setting it as your default with
+    `rustup default stable-<triple>` keeps `cargo build` writing to
+    `c2pa-rs/target/{debug,release}/`.
 - `git submodule update --init --recursive` for the pinned c2pa-rs checkout
 - `node`/`npx` (only required to regenerate the `c2pa/schema/` package)
 
 ## Building
 
-The repo uses `go:generate` for every build artifact that isn't pure Go.
+The repo uses `go:generate` for every build artifact that isn't pure Go. The
+cgo flag files in [c2pa](c2pa) target the host OS automatically via Go build
+constraints; cross-arch builds are not currently supported by the
+`go:generate` directives — build on a host matching your target `GOOS/GOARCH`
+or download a prebuilt library from a GitHub Release (see below).
 
 ```sh
 git submodule update --init --recursive
 
-# Build the c2pa-rs C FFI static library (debug + release) into c2pa-rs/target/.
+# Build the c2pa-rs C FFI static library (debug flavor) into c2pa-rs/target/debug.
 go generate ./c2pa/...
+
+# Or build the release flavor into c2pa-rs/target/release.
+go generate -tags=release ./c2pa/...
 
 # Build the bindings and the example CLI.
 go build ./c2pa                       # debug
@@ -58,10 +79,26 @@ go build -tags=release ./c2pa         # release
 (cd example && go build .)
 ```
 
-The `go:generate` directives in [c2pa/generate.go](c2pa/generate.go) regenerate
-the [c2pa/schema](c2pa/schema) package and run `cargo build --features rust_native_crypto,http`
-inside `c2pa-rs/c2pa_c_ffi` for both debug and release profiles. The cgo flag
-files in [c2pa](c2pa) point the linker at `c2pa-rs/target/{debug,release}`.
+The `go:generate` directives in [c2pa/generate.go](c2pa/generate.go),
+[c2pa/generate_debug.go](c2pa/generate_debug.go) and
+[c2pa/generate_release.go](c2pa/generate_release.go) regenerate the
+[c2pa/schema](c2pa/schema) package and run `cargo build --features rust_native_crypto,http`
+inside `c2pa-rs/c2pa_c_ffi` for the flavor matching the `-tags` passed to
+`go generate`. The cgo flag files in [c2pa](c2pa) point the linker at
+`c2pa-rs/target/{debug,release}` accordingly.
+
+### Using prebuilt C libraries
+
+CI publishes `libc2pa_c` + `c2pa.h` for every supported OS/arch as GitHub
+Release assets (named `c2pa-c-libs-release-<os>-<arch>-<sha>.tar.gz`). To
+consume the bindings without a Rust toolchain:
+
+1. Download the archive matching your `GOOS`/`GOARCH` from the
+   [Releases page](https://github.com/duggaraju/c2pa-go/releases).
+2. Extract its contents into `c2pa-rs/target/release/` (or `target/debug/` for
+   the debug flavor) inside your checkout of this repo.
+3. `go build -tags=release ./c2pa` will then link against the prebuilt
+   library; you no longer need `cargo` or `rustup` installed.
 
 ### Regenerating the schema package
 
