@@ -36,10 +36,13 @@ type SignerAdapter struct {
 //export GoSignerCallback
 func GoSignerCallback(context C.uintptr_t, input *C.uint8_t, input_size C.uintptr_t, output *C.uint8_t, output_size C.uintptr_t) C.intptr_t {
 	handle := cgo.Handle(context)
-	signerAdapter := handle.Value().(SignerAdapter)
+	signerAdapter, ok := handle.Value().(*SignerAdapter)
+	if !ok || signerAdapter == nil || signerAdapter.signer == nil {
+		return C.intptr_t(-1)
+	}
 
-	in := C.GoBytes(unsafe.Pointer(input), C.int(input_size))
-	out := C.GoBytes(unsafe.Pointer(output), C.int(output_size))
+	in := unsafe.Slice((*byte)(unsafe.Pointer(input)), int(input_size))
+	out := unsafe.Slice((*byte)(unsafe.Pointer(output)), int(output_size))
 
 	n, err := signerAdapter.signer.Sign(in, out)
 	if err != nil {
@@ -49,7 +52,7 @@ func GoSignerCallback(context C.uintptr_t, input *C.uint8_t, input_size C.uintpt
 }
 
 func (s *SignerAdapter) Close() {
-	C.c2pa_signer_free(s.ptr)
+	C.c2pa_free(unsafe.Pointer(s.ptr))
 	s.handle.Delete()
 }
 
@@ -69,7 +72,8 @@ func NewSigner(signer Signer) (*SignerAdapter, error) {
 	taUrl := C.CString(signer.TimeStampUrl())
 	defer C.free(unsafe.Pointer(taUrl))
 
-	certificates := C.CString(signer.Certificates())
+	certs := signer.Certificates()
+	certificates := C.CString(certs)
 	defer C.free(unsafe.Pointer(certificates))
 
 	s.ptr = C.create_signer(C.uintptr_t(s.handle), C.C2paSigningAlg(signer.Alg()), taUrl, certificates)

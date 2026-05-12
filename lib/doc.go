@@ -1,0 +1,43 @@
+// Package lib provides Go bindings for the c2pa-rs Content Authenticity SDK.
+//
+// The package exposes the C2PA reader, builder, signer, settings and context
+// APIs through cgo so Go programs can read, create and sign C2PA manifests on
+// any asset format that c2pa-rs supports (JPEG, PNG, TIFF, MP4, and others).
+//
+// All operations are scoped to a [Context]. A context optionally carries
+// [Settings] (trust list, verification policy, builder defaults, etc.). Create
+// a context either with [NewContext] for defaults, or via
+// [NewContextBuilder] when you need to attach settings:
+//
+//	ctx, err := lib.NewContext()
+//	if err != nil { ... }
+//	defer ctx.Close()
+//
+// # Reading manifests
+//
+// Use [ReaderFromFile] (or [NewReader] with a stream) to inspect manifests
+// embedded in or accompanying an asset:
+//
+//	r, err := lib.ReaderFromFile(ctx, "signed.jpg")
+//	if err != nil { ... }
+//	defer r.Close()
+//	fmt.Println(r.Json())
+//
+// # Signing assets
+//
+// Implement the [Signer] interface (or wrap your own signing callback) and
+// drive [Builder.Sign]:
+//
+//	b, err := lib.BuilderFromJson(ctx, manifestJson)
+//	if err != nil { ... }
+//	defer b.Close()
+//	manifest, err := b.Sign("in.jpg", "out.jpg", signer)
+//
+// The [Builder] type mirrors the upstream API, including SetIntent,
+// SetRemoteUrl, AddAction, AddResource, AddIngredient, and archive helpers.
+//
+// # Linking
+//
+// This package links against the c2pa_c shared/static library built from the
+// c2pa-rs c2pa_c_ffi crate. See the project README for build instructions.
+package lib

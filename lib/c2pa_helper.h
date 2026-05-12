@@ -23,7 +23,7 @@ WEAK intptr_t signer_callback(const void* context, const uint8_t* input, uintptr
 
 WEAK C2paSigner* create_signer(uintptr_t context, C2paSigningAlg alg, const char* tsa_url, const char* certificates)
 {
-    return c2pa_signer_create((const void*)context, (SignerCallback)signer_callback, alg, tsa_url, certificates);
+    return c2pa_signer_create((const void*)context, (SignerCallback)signer_callback, alg, certificates, tsa_url);
 }
 
 WEAK intptr_t sign_data(C2paBuilder* builder, const char* format, C2paStream* input, C2paStream* output, C2paSigner* signer, void* manifest)

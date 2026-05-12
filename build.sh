@@ -27,7 +27,7 @@ fi
 
 pushd "$SUBMODULE_DIR" >/dev/null
 echo "Building c2pa-rs (cargo build $CARGO_ARGS)"
-cargo build $CARGO_ARGS --features rust_native_crypto
+cargo build $CARGO_ARGS --features rust_native_crypto,http
 
 popd >/dev/null
 

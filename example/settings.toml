@@ -1,0 +1,57 @@
+version_major = 1
+version_minor = 0
+
+[trust]
+trust_anchors = """
+"""
+trust_config = """
+//id-kp-emailProtection
+1.3.6.1.5.5.7.3.4
+//id-kp-documentSigning
+1.3.6.1.5.5.7.3.36
+//id-kp-timeStamping
+1.3.6.1.5.5.7.3.8
+//id-kp-OCSPSigning
+1.3.6.1.5.5.7.3.9
+// Signer Specific EKUs
+1.3.6.1.4.1.311.97.1.3.1.29433.35007.34545.16815.37291.11644.53265.56135
+"""
+
+[verify]
+verify_after_reading = true
+verify_after_sign = true
+verify_trust = true
+verify_timestamp_trust = true
+ocsp_fetch = false
+remote_manifest_fetch = true
+skip_ingredient_conflict_resolution = false
+strict_v1_validation = false
+
+[builder.auto_timestamp_assertion]
+enabled = true
+
+[builder.thumbnail]
+enabled = true
+ignore_errors = true
+long_edge = 1024
+prefer_smallest_format = true
+quality = "Medium"
+
+[builder.actions]
+all_actions_included = true
+
+[builder.actions.auto_created_action]
+enabled = true
+source_type = "Empty"
+
+[builder.actions.auto_opened_action]
+enabled = true
+
+[builder.actions.auto_placed_action]
+enabled = true
+
+[core]
+debug = false
+salt_jumbf_boxes = true
+prefer_box_hash = false
+compress_manifest = true
