@@ -3,7 +3,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/duggaraju/c2pa-go/c2pa.svg)](https://pkg.go.dev/github.com/duggaraju/c2pa-go/c2pa)
 [![Go Report Card](https://goreportcard.com/badge/github.com/duggaraju/c2pa-go/c2pa)](https://goreportcard.com/report/github.com/duggaraju/c2pa-go/c2pa)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![c2pa-rs](https://img.shields.io/badge/c2pa--rs-v0.83.0-orange?logo=rust)](https://github.com/contentauth/c2pa-rs)
+[![c2pa-rs](https://img.shields.io/badge/c2pa--rs-v0.84.1-orange?logo=rust)](https://github.com/contentauth/c2pa-rs)
 
 Go bindings for the [c2pa-rs](https://github.com/contentauth/c2pa-rs) Content
 Authenticity SDK. This package exposes the C2PA reader, builder, signer and
@@ -13,7 +13,7 @@ Content Authenticity and Content Integrity metadata to media assets.
 
 **Keywords:** c2pa, c2pa-go,  c2pa-rs, Content Authenticity, Content Integrity, Content Credentials, content provenance.
 
-The bindings track c2pa-rs `0.83.x` and link against the `c2pa_c` shared library
+The bindings track c2pa-rs `0.84.x` and link against the `c2pa_c` shared library
 produced by the `c2pa_c_ffi` crate.
 
 ## Status
@@ -24,7 +24,9 @@ produced by the `c2pa_c_ffi` crate.
 - Supported platforms (CI-built):
   - Linux amd64, Linux arm64
   - macOS amd64 (Intel), macOS arm64 (Apple Silicon)
-  - Windows amd64, Windows arm64 (mingw / clang-mingw toolchain via cgo)
+  - Windows amd64 (mingw / gcc toolchain via cgo)
+  - Windows arm64: temporarily disabled in CI while the
+    `aarch64-pc-windows-gnullvm` toolchain story is sorted out.
 - Bindings are not yet API-stable; the surface may change before a tagged
   release.
 
@@ -98,15 +100,33 @@ below. If you need the bundled reqwest resolver, rebuild the library with
 ### Using prebuilt C libraries
 
 CI publishes `libc2pa_c` + `c2pa.h` for every supported OS/arch as GitHub
-Release assets (named `c2pa-c-libs-release-<os>-<arch>-<sha>.tar.gz`). To
-consume the bindings without a Rust toolchain:
+Release assets (named `c2pa-c-libs-release-<os>-<arch>.tar.gz`). To consume
+the bindings without a Rust toolchain, use the `fetchlib` helper to download
+and extract the bundle for your host:
 
-1. Download the archive matching your `GOOS`/`GOARCH` from the
-   [Releases page](https://github.com/duggaraju/c2pa-go/releases).
-2. Extract its contents into `c2pa-rs/target/release/` (or `target/debug/` for
-   the debug flavor) inside your checkout of this repo.
-3. `go build -tags=release ./c2pa` will then link against the prebuilt
-   library; you no longer need `cargo` or `rustup` installed.
+```sh
+# From a checkout of this repo:
+go run ./c2pa/cmd/fetchlib                              # default version, default dest
+go run ./c2pa/cmd/fetchlib -version c2pa/v0.84.1        # pin a specific release
+go run ./c2pa/cmd/fetchlib -dest /tmp/c2pa-libs -env    # also print suggested CGO_*FLAGS
+
+# Or from an arbitrary working directory, without cloning the repo:
+go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@v0.84.1 \
+    -dest ./c2pa-rs/target/release
+```
+
+By default the helper writes to `c2pa-rs/target/release/` relative to the
+current directory, which matches the cgo flag files. After running it,
+`go build -tags=release ./c2pa` will link against the prebuilt library and
+you no longer need `cargo` or `rustup` installed.
+
+If you ship the library to a non-default location, pass `-dest` and either
+update the cgo flag files in [c2pa](c2pa) or override `CGO_CFLAGS`/`CGO_LDFLAGS`
+at build time (the helper prints a starter set with `-env`).
+
+You can also download the archive manually from the
+[Releases page](https://github.com/duggaraju/c2pa-go/releases) and extract it
+into the same destination directory if you prefer to avoid running the helper.
 
 ### Regenerating the schema package
 

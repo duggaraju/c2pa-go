@@ -21,9 +21,13 @@ jobs:
         include:
           - { os: linux,   goarch: amd64, runner: ubuntu-latest,     rust_toolchain: stable }
           - { os: linux,   goarch: arm64, runner: ubuntu-24.04-arm,  rust_toolchain: stable }
+          - { os: macos,   goarch: amd64, runner: macos-26-intel,    rust_toolchain: stable }
           - { os: macos,   goarch: arm64, runner: macos-latest,      rust_toolchain: stable }
           - { os: windows, goarch: amd64, runner: windows-latest,    rust_toolchain: stable-x86_64-pc-windows-gnu }
-          - { os: windows, goarch: arm64, runner: windows-11-arm,    rust_toolchain: stable-aarch64-pc-windows-gnullvm }
+          # windows/arm64 temporarily disabled: gnullvm linker setup is not
+          # working reliably in CI. Re-enable once the toolchain story is
+          # sorted out.
+          # - { os: windows, goarch: arm64, runner: windows-11-arm, rust_toolchain: stable-aarch64-pc-windows-gnullvm }
     env:
       GO_VERSION: '1.25.x'
     defaults:
