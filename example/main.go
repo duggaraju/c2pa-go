@@ -51,12 +51,12 @@ func main() {
 		if *readIn == "" {
 			log.Fatalf("read: -i is required")
 		}
-		ctx, err := createContext(*readSettings)
+		builder, err := createContextBuilder(*readSettings)
 		if err != nil {
-			log.Fatalf("failed to create context: %v", err)
+			log.Fatalf("failed to create context builder: %v", err)
 		}
-		defer ctx.Close()
-		handleRead(ctx, *readIn)
+		defer builder.Close()
+		handleRead(builder, *readIn)
 	case "sign":
 		signCmd.Parse(os.Args[2:])
 		if *signIn == "" {
@@ -65,12 +65,12 @@ func main() {
 		if *signOut == "" {
 			log.Fatalf("sign: -o is required")
 		}
-		ctx, err := createContext(*signSettings)
+		builder, err := createContextBuilder(*signSettings)
 		if err != nil {
-			log.Fatalf("failed to create context: %v", err)
+			log.Fatalf("failed to create context builder: %v", err)
 		}
-		defer ctx.Close()
-		handleSign(ctx, *signIn, *signOut, *signManifest, *certificates, *key)
+		defer builder.Close()
+		handleSign(builder, *signIn, *signOut, *signManifest, *certificates, *key)
 	default:
 		usage()
 		os.Exit(2)
@@ -84,20 +84,23 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  sign  -i <file> -o <file> [-m <manifest>]   Sign the input file (placeholder)")
 }
 
-// createContext builds a *c2pa.Context using settings loaded from the given
-// TOML file. If the file does not exist, defaults are used.
-func createContext(settingsPath string) (*c2pa.Context, error) {
+// createContextBuilder builds a *c2pa.ContextBuilder using settings loaded
+// from the given TOML file. If the file does not exist, defaults are used.
+// The caller owns the returned builder and must Close() it (or consume it via
+// Build()).
+func createContextBuilder(settingsPath string) (*c2pa.ContextBuilder, error) {
 	builder, err := c2pa.NewContextBuilder()
 	if err != nil {
 		return nil, err
 	}
-	defer builder.Close()
 	resolver, err := c2pa.NewHttpResolver(&c2pa.DefaultHttpResolver{})
 	if err != nil {
+		builder.Close()
 		return nil, err
 	}
 	defer resolver.Close()
 	if err := builder.SetHttpResolver(resolver); err != nil {
+		builder.Close()
 		return nil, err
 	}
 
@@ -105,24 +108,35 @@ func createContext(settingsPath string) (*c2pa.Context, error) {
 		if content, err := os.ReadFile(settingsPath); err == nil {
 			settings, err := c2pa.NewSettings()
 			if err != nil {
+				builder.Close()
 				return nil, err
 			}
 			defer settings.Close()
 			if err := settings.UpdateFromString(string(content), "toml"); err != nil {
+				builder.Close()
 				return nil, fmt.Errorf("failed to load settings %s: %w", settingsPath, err)
 			}
 			if err := builder.SetSettings(settings); err != nil {
+				builder.Close()
 				return nil, err
 			}
 		} else if !errors.Is(err, os.ErrNotExist) {
+			builder.Close()
 			return nil, fmt.Errorf("failed to read settings %s: %w", settingsPath, err)
 		}
 	}
 
-	return builder.Build()
+	return builder, nil
 }
 
-func handleRead(ctx *c2pa.Context, path string) {
+func handleRead(builder *c2pa.ContextBuilder, path string) {
+	ctx, err := builder.Build()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to build context: %v", err)
+		return
+	}
+	defer ctx.Close()
+
 	r, err := c2pa.ReaderFromFile(ctx, path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to open reader: %v", err)
@@ -134,8 +148,32 @@ func handleRead(ctx *c2pa.Context, path string) {
 	fmt.Println(json)
 }
 
-func handleSign(ctx *c2pa.Context, input, output, manifest, certificates, key string) {
-	_, err := os.Stat(manifest)
+func handleSign(builder *c2pa.ContextBuilder, input, output, manifest, certificates, key string) {
+	signer, err := CreateTestSigner(certificates, key)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create signer: %v", err)
+		return
+	}
+
+	signerAdapter, err := c2pa.NewSigner(signer)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create signer adapter: %v", err)
+		return
+	}
+	defer signerAdapter.Close()
+	if err := builder.SetSigner(signerAdapter); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to set signer on context: %v", err)
+		return
+	}
+
+	ctx, err := builder.Build()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to build context: %v", err)
+		return
+	}
+	defer ctx.Close()
+
+	_, err = os.Stat(manifest)
 	if errors.Is(err, os.ErrNotExist) {
 		manifest = DEFAULT_MANIFEST
 	} else {
@@ -145,20 +183,23 @@ func handleSign(ctx *c2pa.Context, input, output, manifest, certificates, key st
 		}
 		manifest = string(content)
 	}
-	builder, err := c2pa.BuilderFromJson(ctx, manifest)
+	b, err := c2pa.NewBuilder(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create builder: %v", err)
-	}
-	defer builder.Close()
+		return
 
-	signer, err := CreateTestSigner(certificates, key)
+	}
+
+	defer b.Close()
+	b, err = b.WithDefinition(manifest)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create signer: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to create builder: %v", err)
 		return
 	}
 
-	bytes, err := builder.Sign(input, output, signer)
-
+	// BUG: SignWithContext doesn't timestamp
+	// bytes, err := b.SignWithContext(input, output)
+	bytes, err := b.Sign(input, output, signer)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to sign file: %v", err)
 	} else {

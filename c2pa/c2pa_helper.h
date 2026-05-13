@@ -11,7 +11,7 @@ extern "C" {
 #ifdef __GNUC__
 #define WEAK __attribute__((weak))
 #else
-#define WEAK 
+#define WEAK
 #endif
 
 extern intptr_t GoSignerCallback(uintptr_t context, uint8_t* input, uintptr_t input_size, uint8_t* output, uintptr_t output_size);
@@ -25,12 +25,6 @@ WEAK C2paSigner* create_signer(uintptr_t context, C2paSigningAlg alg, const char
 {
     return c2pa_signer_create((const void*)context, (SignerCallback)signer_callback, alg, certificates, tsa_url);
 }
-
-WEAK intptr_t sign_data(C2paBuilder* builder, const char* format, C2paStream* input, C2paStream* output, C2paSigner* signer, void* manifest)
-{
-	return c2pa_builder_sign(builder, format, input, output, signer, (const uint8_t**)manifest);
-}
-
 
 extern intptr_t StreamRead(uintptr_t context, uint8_t *buffer, intptr_t size);
 WEAK intptr_t stream_read(StreamContext *context, uint8_t *buffer, intptr_t size) {

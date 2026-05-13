@@ -188,16 +188,9 @@ func (b *Builder) ToArchiveFile(path string) error {
 	return b.ToArchive(f)
 }
 
-func (b *Builder) Sign(input_file string, output_file string, signer Signer) ([]byte, error) {
-	ext := filepath.Ext(input_file)
-	cformat := C.CString(ext[1:]) // skip the dot
+func (b *Builder) SignStream(format string, input *os.File, output *os.File, signer Signer) ([]byte, error) {
+	cformat := C.CString(format)
 	defer C.free(unsafe.Pointer(cformat))
-
-	input, err := os.Open(input_file)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file %s: %v", input_file, err)
-	}
-	defer input.Close()
 
 	input_stream, err := NewStream(input)
 	if err != nil {
@@ -205,32 +198,61 @@ func (b *Builder) Sign(input_file string, output_file string, signer Signer) ([]
 	}
 	defer input_stream.Close()
 
-	output, err := os.Create(output_file)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create file %s: %v", output_file, err)
-	}
-	defer output.Close()
-
 	output_stream, err := NewStream(output)
 	if err != nil {
 		return nil, err
 	}
 	defer output_stream.Close()
 
-	signerAdapter, err := NewSigner(signer)
-	if err != nil {
-		return nil, err
-	}
-	defer signerAdapter.Close()
-
 	var manifest *C.uchar
-	len := C.sign_data(b.ptr, cformat, input_stream.ptr, output_stream.ptr, signerAdapter.ptr, unsafe.Pointer(&manifest))
-	if len < 0 {
-		return nil, fmt.Errorf("failed to sign file %s: %s", input_file, C2paError())
+	var size C.int64_t
+	if signer != nil {
+		signerAdapter, err := NewSigner(signer)
+		if err != nil {
+			return nil, err
+		}
+		defer signerAdapter.Close()
+		size = C.c2pa_builder_sign(b.ptr, cformat, input_stream.ptr, output_stream.ptr, signerAdapter.ptr, &manifest)
+
+	} else {
+		size = C.c2pa_builder_sign_context(b.ptr, cformat, input_stream.ptr, output_stream.ptr, &manifest)
+	}
+	if size < 0 {
+		return nil, fmt.Errorf("failed to sign : %s", C2paError())
+	}
+	defer C.c2pa_free(unsafe.Pointer(manifest))
+	return C.GoBytes(unsafe.Pointer(manifest), C.int(size)), nil
+}
+
+func (b *Builder) SignFile(input_file string, output_file string, signer Signer) ([]byte, error) {
+	ext := filepath.Ext(input_file)
+	format := ""
+	if len(ext) > 0 {
+		format = ext[1:] // skip the dot
 	}
 
-	defer C.c2pa_free(unsafe.Pointer(manifest))
-	return C.GoBytes(unsafe.Pointer(manifest), C.int(len)), nil
+	input, err := os.Open(input_file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file %s: %v", input_file, err)
+	}
+	defer input.Close()
+
+	output, err := os.Create(output_file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create file %s: %v", output_file, err)
+	}
+	defer output.Close()
+
+	return b.SignStream(format, input, output, signer)
+}
+
+func (b *Builder) Sign(input_file string, output_file string, signer Signer) ([]byte, error) {
+	return b.SignFile(input_file, output_file, signer)
+}
+
+// Sign using the signer and http resolver from the context.
+func (b *Builder) SignWithContext(input_file string, output_file string) ([]byte, error) {
+	return b.SignFile(input_file, output_file, nil)
 }
 
 // NewBuilder creates a new Builder from the given Context.
@@ -245,33 +267,19 @@ func NewBuilder(ctx *Context) (*Builder, error) {
 	return &Builder{ptr: ptr}, nil
 }
 
-// BuilderFromJson creates a Builder from the given JSON manifest definition
-// using the supplied Context.
-func BuilderFromJson(ctx *Context, json string) (*Builder, error) {
-	b, err := NewBuilder(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+func (b *Builder) WithDefinition(json string) (*Builder, error) {
 	cjson := C.CString(json)
 	defer C.free(unsafe.Pointer(cjson))
-
-	ptr := C.c2pa_builder_with_definition(b.ptr, cjson)
-	if ptr == nil {
-		return nil, fmt.Errorf("failed to set definition on c2pa Builder: %s", C2paError())
+	b.ptr = C.c2pa_builder_with_definition(b.ptr, cjson)
+	if b.ptr == nil {
+		return nil, fmt.Errorf("Failed to set definition: %s", C2paError())
 	}
-	b.ptr = ptr
 	return b, nil
 }
 
 // BuilderFromArchive creates a Builder from an archive previously produced by
 // ToArchive, using the supplied Context.
-func BuilderFromArchive(ctx *Context, file *os.File) (*Builder, error) {
-	b, err := NewBuilder(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+func (b *Builder) FromArchive(file *os.File) (*Builder, error) {
 	stream, err := NewStream(file)
 	if err != nil {
 		b.Close()
@@ -281,7 +289,6 @@ func BuilderFromArchive(ctx *Context, file *os.File) (*Builder, error) {
 
 	ptr := C.c2pa_builder_with_archive(b.ptr, stream.ptr)
 	if ptr == nil {
-		b.Close()
 		return nil, fmt.Errorf("failed to load archive: %s", C2paError())
 	}
 	b.ptr = ptr
@@ -289,23 +296,23 @@ func BuilderFromArchive(ctx *Context, file *os.File) (*Builder, error) {
 }
 
 // BuilderFromArchiveFile is a convenience wrapper around BuilderFromArchive.
-func BuilderFromArchiveFile(ctx *Context, path string) (*Builder, error) {
+func (b *Builder) FromArchiveFile(path string) (*Builder, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open %s: %v", path, err)
 	}
 	defer f.Close()
-	return BuilderFromArchive(ctx, f)
+	return b.FromArchive(f)
 }
 
 // BuilderFromDefinition creates a Builder from a typed ManifestDefinition.
 // It marshals the definition to JSON and forwards it to BuilderFromJson.
-func BuilderFromDefinition(ctx *Context, def *schema.ManifestDefinition) (*Builder, error) {
+func (b *Builder) WithManifestDefinition(def *schema.ManifestDefinition) (*Builder, error) {
 	data, err := json.Marshal(def)
 	if err != nil {
 		return nil, err
 	}
-	return BuilderFromJson(ctx, string(data))
+	return b.WithDefinition(string(data))
 }
 
 // AddActionTyped marshals action to JSON and adds it as an action assertion.
