@@ -44,5 +44,10 @@
 // # Linking
 //
 // This package links against the c2pa_c shared/static library built from the
-// c2pa-rs c2pa_c_ffi crate. See the project README for build instructions.
+// c2pa-rs c2pa_c_ffi crate. You can either download a prebuilt library
+// (no Rust toolchain required) using the fetchlib helper, or rebuild the
+// C FFI from source via go generate. See the "Building" section of the
+// project README for the full recipe:
+//
+// https://github.com/duggaraju/c2pa-go#building
 package c2pa

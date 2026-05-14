@@ -33,11 +33,15 @@ produced by the `c2pa_c_ffi` crate.
 ## Repository layout
 
 ```
-c2pa/           Go package (module github.com/duggaraju/c2pa-go/c2pa)
-c2pa/schema/    Generated Go types from the c2pa JSON schemas
-                (package github.com/duggaraju/c2pa-go/c2pa/schema)
-example/        Sample CLI that reads and signs assets
-c2pa-rs/        Pinned upstream submodule built into the c2pa_c static lib
+c2pa/                 Go package (module github.com/duggaraju/c2pa-go/c2pa)
+c2pa/schema/          Generated Go types from the c2pa JSON schemas
+                      (package github.com/duggaraju/c2pa-go/c2pa/schema)
+c2pa/cmd/fetchlib/    Helper CLI that downloads the prebuilt libc2pa_c
+                      tarball for the current OS/arch from a GitHub Release
+                      and extracts it into c2pa-rs/target/release (see
+                      "Using prebuilt C libraries" below)
+example/              Sample CLI that reads and signs assets
+c2pa-rs/              Pinned upstream submodule built into the c2pa_c static lib
 ```
 
 ## Requirements
@@ -66,20 +70,46 @@ constraints; cross-arch builds are not currently supported by the
 `go:generate` directives — build on a host matching your target `GOOS/GOARCH`
 or download a prebuilt library from a GitHub Release (see below).
 
-```sh
-git submodule update --init --recursive
+There are two supported paths:
 
-# Build the c2pa-rs C FFI static library (debug flavor) into c2pa-rs/target/debug.
-go generate ./c2pa/...
+1. **Without the Rust toolchain** (recommended for consumers) — download a
+   prebuilt `libc2pa_c` from a GitHub Release with the `fetchlib` helper, then
+   run `go build`. No `cargo`/`rustup` required. See
+   [Using prebuilt C libraries](#using-prebuilt-c-libraries) below for the
+   full recipe; the short version is:
 
-# Or build the release flavor into c2pa-rs/target/release.
-go generate -tags=release ./c2pa/...
+   ```sh
+   git submodule update --init --recursive
+   go run ./c2pa/cmd/fetchlib            # populates c2pa-rs/target/release/
+   go build -tags=release ./c2pa
+   (cd example && go build -tags=release .)
+   ```
 
-# Build the bindings and the example CLI.
-go build ./c2pa                       # debug
-go build -tags=release ./c2pa         # release
-(cd example && go build .)
-```
+   From a project that just depends on this module (no checkout needed):
+
+   ```sh
+   go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@v0.84.1 \
+       -dest ./c2pa-rs/target/release
+   go build -tags=release ./...
+   ```
+
+2. **With the Rust toolchain** — rebuild the C FFI from source via
+   `go generate`:
+
+   ```sh
+   git submodule update --init --recursive
+
+   # Build the c2pa-rs C FFI static library (debug flavor) into c2pa-rs/target/debug.
+   go generate ./c2pa/...
+
+   # Or build the release flavor into c2pa-rs/target/release.
+   go generate -tags=release ./c2pa/...
+
+   # Build the bindings and the example CLI.
+   go build ./c2pa                       # debug
+   go build -tags=release ./c2pa         # release
+   (cd example && go build .)
+   ```
 
 The `go:generate` directives in [c2pa/generate.go](c2pa/generate.go),
 [c2pa/generate_debug.go](c2pa/generate_debug.go) and
@@ -89,13 +119,10 @@ inside `c2pa-rs/c2pa_c_ffi` for the flavor matching the `-tags` passed to
 `go generate`. The cgo flag files in [c2pa](c2pa) point the linker at
 `c2pa-rs/target/{debug,release}` accordingly.
 
-The `c2pa_c` library is built **without** the optional `http` feature of
-`c2pa-c-ffi`, so the reqwest-based HTTP stack is not linked into the
-resulting library. Remote operations (remote manifest fetches, OCSP, RFC 3161
-timestamp authorities) are instead serviced by a Go-side resolver wired up
+Remote operations (remote manifest fetches, OCSP, RFC 3161
+timestamp authorities) can be serviced by a Go-side resolver wired up
 through `ContextBuilder.SetHttpResolver` — see [HTTP resolver](#http-resolver)
-below. If you need the bundled reqwest resolver, rebuild the library with
-`cargo build --features rust_native_crypto,http`.
+below. The build is bundled with reqwest based resolver.
 
 ### Using prebuilt C libraries
 
@@ -289,9 +316,8 @@ r.ResourceToFile("self#jumbf=c2pa.assertions/c2pa.thumbnail", "thumb.jpg")
 
 ### HTTP resolver
 
-The `c2pa_c` library is built without the reqwest-based `http` feature, so any
-operation that needs to make an HTTP request (fetching a remote manifest,
-OCSP, or an RFC 3161 timestamp) requires a Go-side resolver. Install one on
+The `c2pa_c` library is built with the reqwest-based `http` feature, but also implements a Go-side resolver.
+Operation that needs to make an HTTP request (fetching a remote manifest,OCSP, or an RFC 3161 timestamp) use the resolver. Install one on
 the `ContextBuilder` before calling `Build`:
 
 ```go
