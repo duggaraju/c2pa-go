@@ -1,13 +1,6 @@
 package main
 
 import (
-	"crypto"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
-	"encoding/asn1"
-	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -149,19 +142,24 @@ func handleRead(builder *c2pa.ContextBuilder, path string) {
 }
 
 func handleSign(builder *c2pa.ContextBuilder, input, output, manifest, certificates, key string) {
-	signer, err := CreateTestSigner(certificates, key)
+	certBytes, err := os.ReadFile(certificates)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create signer: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to read certificates: %v", err)
+		return
+	}
+	keyBytes, err := os.ReadFile(key)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to read private key: %v", err)
 		return
 	}
 
-	signerAdapter, err := c2pa.NewSigner(signer)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create signer adapter: %v", err)
-		return
+	info := c2pa.SignerInfo{
+		Alg:          "ps256",
+		SignCert:     string(certBytes),
+		PrivateKey:   string(keyBytes),
+		TimestampUrl: "http://timestamp.digicert.com",
 	}
-	defer signerAdapter.Close()
-	if err := builder.SetSigner(signerAdapter); err != nil {
+	if err := builder.SetSignerInfo(info); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to set signer on context: %v", err)
 		return
 	}
@@ -197,93 +195,10 @@ func handleSign(builder *c2pa.ContextBuilder, input, output, manifest, certifica
 		return
 	}
 
-	// BUG: SignWithContext doesn't timestamp
-	// bytes, err := b.SignWithContext(input, output)
-	bytes, err := b.Sign(input, output, signer)
+	bytes, err := b.SignWithContext(input, output)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to sign file: %v", err)
 	} else {
 		fmt.Printf("Signed file %s, manifest bytes: %d\n", output, len(bytes))
 	}
-}
-
-type TestSigner struct {
-	certificates string
-	key          *rsa.PrivateKey
-}
-
-func CreateTestSigner(cert string, key string) (*TestSigner, error) {
-	certificates, err := os.ReadFile(cert)
-	if err != nil {
-		return nil, err
-	}
-
-	keyBytes, err := os.ReadFile(key)
-	if err != nil {
-		return nil, err
-	}
-	block, _ := pem.Decode(keyBytes)
-	if block == nil {
-		return nil, fmt.Errorf("failed to decode PEM block")
-	}
-
-	rsaKey, err := parseRSAPrivateKey(block.Bytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return &TestSigner{
-		certificates: string(certificates),
-		key:          rsaKey,
-	}, nil
-}
-
-// parseRSAPrivateKey accepts a PKCS#1 or PKCS#8 encoded RSA key. PKCS#8 keys
-// using the RSASSA-PSS OID (1.2.840.113549.1.1.10) are also accepted; the
-// inner PKCS#1 RSAPrivateKey is parsed directly.
-func parseRSAPrivateKey(der []byte) (*rsa.PrivateKey, error) {
-	if k, err := x509.ParsePKCS1PrivateKey(der); err == nil {
-		return k, nil
-	}
-	if k, err := x509.ParsePKCS8PrivateKey(der); err == nil {
-		if rsaKey, ok := k.(*rsa.PrivateKey); ok {
-			return rsaKey, nil
-		}
-		return nil, fmt.Errorf("key is not an RSA private key")
-	}
-	// Fallback: unwrap PKCS#8 manually for keys with RSASSA-PSS OID.
-	var pkcs8 struct {
-		Version    int
-		Algo       asn1.RawValue
-		PrivateKey []byte
-	}
-	if _, err := asn1.Unmarshal(der, &pkcs8); err != nil {
-		return nil, fmt.Errorf("failed to parse PKCS#8: %w", err)
-	}
-	return x509.ParsePKCS1PrivateKey(pkcs8.PrivateKey)
-}
-func (s *TestSigner) Sign(input []byte, output []byte) (int, error) {
-	hash := sha256.Sum256(input)
-	sig, err := rsa.SignPSS(rand.Reader, s.key, crypto.SHA256, hash[:], &rsa.PSSOptions{
-		SaltLength: rsa.PSSSaltLengthEqualsHash,
-	})
-	if err != nil {
-		return -1, err
-	}
-	if len(sig) > len(output) {
-		return -1, fmt.Errorf("output buffer too small: need %d, have %d", len(sig), len(output))
-	}
-	return copy(output, sig), nil
-}
-
-func (s *TestSigner) Alg() c2pa.SigningAlg {
-	return c2pa.SigningAlgPs256
-}
-
-func (s *TestSigner) TimeStampUrl() string {
-	return "http://timestamp.digicert.com"
-}
-
-func (s *TestSigner) Certificates() string {
-	return s.certificates
 }

@@ -64,7 +64,7 @@ func NewHttpResolver(resolver HttpResolver) (*HttpResolverAdapter, error) {
 	a.ptr = C.create_http_resolver(C.uintptr_t(a.handle))
 	if a.ptr == nil {
 		a.handle.Delete()
-		return nil, fmt.Errorf("failed to create c2pa http resolver: %s", C2paError())
+		return nil, fmt.Errorf("failed to create c2pa http resolver: %s", c2paError())
 	}
 	return a, nil
 }
@@ -109,8 +109,8 @@ func parseHeaders(raw string) http.Header {
 	return h
 }
 
-//export GoHttpResolverCallback
-func GoHttpResolverCallback(context C.uintptr_t, request *C.C2paHttpRequest, response *C.C2paHttpResponse) C.int {
+//export httpResolverCallback
+func httpResolverCallback(context C.uintptr_t, request *C.C2paHttpRequest, response *C.C2paHttpResponse) C.int {
 	if request == nil || response == nil {
 		setLastError("InvalidParameter: nil http request or response")
 		return -1

@@ -33,7 +33,7 @@ func TestC2paError_AfterReaderFailure(t *testing.T) {
 	_, readerErr := ReaderFromFile(ctx, path)
 	assert.Error(t, readerErr)
 
-	lastErr := C2paError()
+	lastErr := c2paError()
 	assert.NotEmpty(t, lastErr)
 }
 

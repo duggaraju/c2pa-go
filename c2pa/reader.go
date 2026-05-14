@@ -20,12 +20,6 @@ type Reader struct {
 	ptr *C.C2paReader
 }
 
-// Ptr returns the underlying C pointer. Use carefully; callers must not keep
-// the pointer past the lifetime of the Reader or the underlying C resource.
-func (r *Reader) Ptr() *C.C2paReader {
-	return r.ptr
-}
-
 func (r *Reader) Close() {
 	C.c2pa_free(unsafe.Pointer(r.ptr))
 }
@@ -72,7 +66,7 @@ func (r *Reader) ResourceToStream(uri string, file *os.File) (int64, error) {
 
 	n := C.c2pa_reader_resource_to_stream(r.ptr, curi, stream.ptr)
 	if n < 0 {
-		return 0, fmt.Errorf("failed to write resource %s: %s", uri, C2paError())
+		return 0, fmt.Errorf("failed to write resource %s: %s", uri, c2paError())
 	}
 	return int64(n), nil
 }
@@ -87,6 +81,58 @@ func (r *Reader) ResourceToFile(uri string, path string) (int64, error) {
 	return r.ResourceToStream(uri, f)
 }
 
+// WithManifestData configures the reader from an asset stream and a sidecar
+// manifest. The reader must have been created with NewReader and not yet
+// configured with WithStream/WithManifestData/WithFragment.
+func (r *Reader) WithManifestData(format string, file *os.File, manifestData []byte) error {
+	cformat := C.CString(format)
+	defer C.free(unsafe.Pointer(cformat))
+
+	stream, err := NewStream(file)
+	if err != nil {
+		return err
+	}
+	defer stream.Close()
+
+	var dataPtr *C.uchar
+	if len(manifestData) > 0 {
+		dataPtr = (*C.uchar)(unsafe.Pointer(&manifestData[0]))
+	}
+	next := C.c2pa_reader_with_manifest_data_and_stream(
+		r.ptr, cformat, stream.ptr, dataPtr, C.uintptr_t(len(manifestData)))
+	if next == nil {
+		return fmt.Errorf("failed to configure reader with manifest data: %s", c2paError())
+	}
+	r.ptr = next
+	return nil
+}
+
+// WithFragment configures the reader for a fragmented BMFF asset where the
+// manifest lives in a separate fragment stream.
+func (r *Reader) WithFragment(format string, asset *os.File, fragment *os.File) error {
+	cformat := C.CString(format)
+	defer C.free(unsafe.Pointer(cformat))
+
+	assetStream, err := NewStream(asset)
+	if err != nil {
+		return err
+	}
+	defer assetStream.Close()
+
+	fragStream, err := NewStream(fragment)
+	if err != nil {
+		return err
+	}
+	defer fragStream.Close()
+
+	next := C.c2pa_reader_with_fragment(r.ptr, cformat, assetStream.ptr, fragStream.ptr)
+	if next == nil {
+		return fmt.Errorf("failed to configure reader with fragment: %s", c2paError())
+	}
+	r.ptr = next
+	return nil
+}
+
 // NewReader creates a new Reader from the given Context. The reader must be
 // configured with a stream (e.g. via ReaderFromFile or by reusing the
 // Context with another helper) before it can be used.
@@ -96,7 +142,7 @@ func NewReader(ctx *Context) (*Reader, error) {
 	}
 	reader := C.c2pa_reader_from_context(ctx.ptr)
 	if reader == nil {
-		return nil, fmt.Errorf("failed to create c2pa reader: %s", C2paError())
+		return nil, fmt.Errorf("failed to create c2pa reader: %s", c2paError())
 	}
 	return &Reader{ptr: reader}, nil
 }
@@ -125,11 +171,11 @@ func ReaderFromFile(ctx *Context, path string) (*Reader, error) {
 
 	reader := C.c2pa_reader_from_context(ctx.ptr)
 	if reader == nil {
-		return nil, fmt.Errorf("failed to create c2pa reader for %s: %s", path, C2paError())
+		return nil, fmt.Errorf("failed to create c2pa reader for %s: %s", path, c2paError())
 	}
 	reader = C.c2pa_reader_with_stream(reader, cformat, stream.ptr)
 	if reader == nil {
-		return nil, fmt.Errorf("failed to configure c2pa reader for %s: %s", path, C2paError())
+		return nil, fmt.Errorf("failed to configure c2pa reader for %s: %s", path, c2paError())
 	}
 	return &Reader{ptr: reader}, nil
 }

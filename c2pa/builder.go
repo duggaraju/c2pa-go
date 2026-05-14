@@ -67,7 +67,7 @@ func (b *Builder) SetRemoteUrl(url string) error {
 	curl := C.CString(url)
 	defer C.free(unsafe.Pointer(curl))
 	if C.c2pa_builder_set_remote_url(b.ptr, curl) < 0 {
-		return fmt.Errorf("failed to set remote url: %s", C2paError())
+		return fmt.Errorf("failed to set remote url: %s", c2paError())
 	}
 	return nil
 }
@@ -77,7 +77,7 @@ func (b *Builder) SetBasePath(path string) error {
 	cpath := C.CString(path)
 	defer C.free(unsafe.Pointer(cpath))
 	if C.c2pa_builder_set_base_path(b.ptr, cpath) < 0 {
-		return fmt.Errorf("failed to set base path: %s", C2paError())
+		return fmt.Errorf("failed to set base path: %s", c2paError())
 	}
 	return nil
 }
@@ -86,7 +86,7 @@ func (b *Builder) SetBasePath(path string) error {
 // and ignored for other intents.
 func (b *Builder) SetIntent(intent BuilderIntent, digitalSourceType DigitalSourceType) error {
 	if C.c2pa_builder_set_intent(b.ptr, uint32(intent), uint32(digitalSourceType)) < 0 {
-		return fmt.Errorf("failed to set intent: %s", C2paError())
+		return fmt.Errorf("failed to set intent: %s", c2paError())
 	}
 	return nil
 }
@@ -96,7 +96,7 @@ func (b *Builder) AddAction(actionJson string) error {
 	cjson := C.CString(actionJson)
 	defer C.free(unsafe.Pointer(cjson))
 	if C.c2pa_builder_add_action(b.ptr, cjson) < 0 {
-		return fmt.Errorf("failed to add action: %s", C2paError())
+		return fmt.Errorf("failed to add action: %s", c2paError())
 	}
 	return nil
 }
@@ -113,7 +113,7 @@ func (b *Builder) AddResource(uri string, file *os.File) error {
 	defer stream.Close()
 
 	if C.c2pa_builder_add_resource(b.ptr, curi, stream.ptr) < 0 {
-		return fmt.Errorf("failed to add resource %s: %s", uri, C2paError())
+		return fmt.Errorf("failed to add resource %s: %s", uri, c2paError())
 	}
 	return nil
 }
@@ -143,7 +143,7 @@ func (b *Builder) AddIngredientFromStream(ingredientJson string, format string, 
 	defer stream.Close()
 
 	if C.c2pa_builder_add_ingredient_from_stream(b.ptr, cjson, cformat, stream.ptr) < 0 {
-		return fmt.Errorf("failed to add ingredient: %s", C2paError())
+		return fmt.Errorf("failed to add ingredient: %s", c2paError())
 	}
 	return nil
 }
@@ -172,7 +172,7 @@ func (b *Builder) ToArchive(file *os.File) error {
 	defer stream.Close()
 
 	if C.c2pa_builder_to_archive(b.ptr, stream.ptr) < 0 {
-		return fmt.Errorf("failed to write archive: %s", C2paError())
+		return fmt.Errorf("failed to write archive: %s", c2paError())
 	}
 	return nil
 }
@@ -186,6 +186,63 @@ func (b *Builder) ToArchiveFile(path string) error {
 	}
 	defer f.Close()
 	return b.ToArchive(f)
+}
+
+// AddIngredientFromArchive loads an ingredient from a single-ingredient C2PA
+// archive previously written by WriteIngredientArchive and adds it to this
+// builder.
+func (b *Builder) AddIngredientFromArchive(file *os.File) error {
+	stream, err := NewStream(file)
+	if err != nil {
+		return err
+	}
+	defer stream.Close()
+
+	if C.c2pa_builder_add_ingredient_from_archive(b.ptr, stream.ptr) < 0 {
+		return fmt.Errorf("failed to add ingredient from archive: %s", c2paError())
+	}
+	return nil
+}
+
+// AddIngredientFromArchiveFile opens path and adds it to this builder via
+// AddIngredientFromArchive.
+func (b *Builder) AddIngredientFromArchiveFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("failed to open %s: %v", path, err)
+	}
+	defer f.Close()
+	return b.AddIngredientFromArchive(f)
+}
+
+// WriteIngredientArchive writes a single-ingredient C2PA archive identified by
+// ingredientId to file. Requires the generate_c2pa_archive builder setting to
+// be enabled on the Context.
+func (b *Builder) WriteIngredientArchive(ingredientId string, file *os.File) error {
+	cid := C.CString(ingredientId)
+	defer C.free(unsafe.Pointer(cid))
+
+	stream, err := NewStream(file)
+	if err != nil {
+		return err
+	}
+	defer stream.Close()
+
+	if C.c2pa_builder_write_ingredient_archive(b.ptr, cid, stream.ptr) < 0 {
+		return fmt.Errorf("failed to write ingredient archive: %s", c2paError())
+	}
+	return nil
+}
+
+// WriteIngredientArchiveFile creates path and writes a single-ingredient C2PA
+// archive to it.
+func (b *Builder) WriteIngredientArchiveFile(ingredientId, path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("failed to create %s: %v", path, err)
+	}
+	defer f.Close()
+	return b.WriteIngredientArchive(ingredientId, f)
 }
 
 func (b *Builder) SignStream(format string, input *os.File, output *os.File, signer Signer) ([]byte, error) {
@@ -207,18 +264,18 @@ func (b *Builder) SignStream(format string, input *os.File, output *os.File, sig
 	var manifest *C.uchar
 	var size C.int64_t
 	if signer != nil {
-		signerAdapter, err := NewSigner(signer)
+		adapter, err := newSigner(signer)
 		if err != nil {
 			return nil, err
 		}
-		defer signerAdapter.Close()
-		size = C.c2pa_builder_sign(b.ptr, cformat, input_stream.ptr, output_stream.ptr, signerAdapter.ptr, &manifest)
+		defer adapter.Close()
+		size = C.c2pa_builder_sign(b.ptr, cformat, input_stream.ptr, output_stream.ptr, adapter.ptr, &manifest)
 
 	} else {
 		size = C.c2pa_builder_sign_context(b.ptr, cformat, input_stream.ptr, output_stream.ptr, &manifest)
 	}
 	if size < 0 {
-		return nil, fmt.Errorf("failed to sign : %s", C2paError())
+		return nil, fmt.Errorf("failed to sign : %s", c2paError())
 	}
 	defer C.c2pa_free(unsafe.Pointer(manifest))
 	return C.GoBytes(unsafe.Pointer(manifest), C.int(size)), nil
@@ -262,7 +319,7 @@ func NewBuilder(ctx *Context) (*Builder, error) {
 	}
 	ptr := C.c2pa_builder_from_context(ctx.ptr)
 	if ptr == nil {
-		return nil, fmt.Errorf("failed to create c2pa Builder: %s", C2paError())
+		return nil, fmt.Errorf("failed to create c2pa Builder: %s", c2paError())
 	}
 	return &Builder{ptr: ptr}, nil
 }
@@ -272,7 +329,7 @@ func (b *Builder) WithDefinition(json string) (*Builder, error) {
 	defer C.free(unsafe.Pointer(cjson))
 	b.ptr = C.c2pa_builder_with_definition(b.ptr, cjson)
 	if b.ptr == nil {
-		return nil, fmt.Errorf("Failed to set definition: %s", C2paError())
+		return nil, fmt.Errorf("Failed to set definition: %s", c2paError())
 	}
 	return b, nil
 }
@@ -289,7 +346,7 @@ func (b *Builder) FromArchive(file *os.File) (*Builder, error) {
 
 	ptr := C.c2pa_builder_with_archive(b.ptr, stream.ptr)
 	if ptr == nil {
-		return nil, fmt.Errorf("failed to load archive: %s", C2paError())
+		return nil, fmt.Errorf("failed to load archive: %s", c2paError())
 	}
 	b.ptr = ptr
 	return b, nil
@@ -322,4 +379,213 @@ func (b *Builder) AddActionTyped(action any) error {
 		return err
 	}
 	return b.AddAction(string(data))
+}
+
+// HashType corresponds to C2paHashType — the hash binding type a Builder will
+// produce for a given format in the embeddable signing workflow.
+type HashType uint32
+
+const (
+	// HashTypeData uses placeholder + exclusions + hash + sign (JPEG, PNG, …).
+	HashTypeData HashType = HashType(C.DataHash)
+	// HashTypeBmff uses placeholder + hash + sign (MP4, AVIF, HEIF/HEIC).
+	HashTypeBmff HashType = HashType(C.BmffHash)
+	// HashTypeBox uses hash + sign with no placeholder needed.
+	HashTypeBox HashType = HashType(C.BoxHash)
+)
+
+// HashExclusion describes a contiguous byte range to exclude from a DataHash
+// binding.
+type HashExclusion struct {
+	Start  uint64
+	Length uint64
+}
+
+// NeedsPlaceholder reports whether a placeholder manifest is required for the
+// given format.
+func (b *Builder) NeedsPlaceholder(format string) (bool, error) {
+	cformat := C.CString(format)
+	defer C.free(unsafe.Pointer(cformat))
+	rc := C.c2pa_builder_needs_placeholder(b.ptr, cformat)
+	switch rc {
+	case 1:
+		return true, nil
+	case 0:
+		return false, nil
+	default:
+		return false, fmt.Errorf("failed to query placeholder need: %s", c2paError())
+	}
+}
+
+// HashType returns the hash binding type the builder will use for the given
+// format.
+func (b *Builder) HashType(format string) (HashType, error) {
+	cformat := C.CString(format)
+	defer C.free(unsafe.Pointer(cformat))
+	var out uint32
+	if C.c2pa_builder_hash_type(b.ptr, cformat, &out) < 0 {
+		return 0, fmt.Errorf("failed to query hash type: %s", c2paError())
+	}
+	return HashType(out), nil
+}
+
+// Placeholder returns a composed placeholder manifest that can be embedded
+// directly into an asset to reserve space for the final signed manifest. The
+// signer is obtained from the Builder's Context.
+func (b *Builder) Placeholder(format string) ([]byte, error) {
+	cformat := C.CString(format)
+	defer C.free(unsafe.Pointer(cformat))
+	var bytesPtr *C.uchar
+	n := C.c2pa_builder_placeholder(b.ptr, cformat, &bytesPtr)
+	if n < 0 {
+		return nil, fmt.Errorf("failed to create placeholder: %s", c2paError())
+	}
+	return takeCBytes(bytesPtr, int64(n)), nil
+}
+
+// DataHashedPlaceholder reserves reservedSize bytes for a signature and
+// returns the resulting placeholder manifest bytes.
+func (b *Builder) DataHashedPlaceholder(reservedSize int, format string) ([]byte, error) {
+	cformat := C.CString(format)
+	defer C.free(unsafe.Pointer(cformat))
+	var bytesPtr *C.uchar
+	n := C.c2pa_builder_data_hashed_placeholder(b.ptr, C.uintptr_t(reservedSize), cformat, &bytesPtr)
+	if n < 0 {
+		return nil, fmt.Errorf("failed to create data-hashed placeholder: %s", c2paError())
+	}
+	return takeCBytes(bytesPtr, int64(n)), nil
+}
+
+// SignDataHashedEmbeddable signs the manifest using the supplied signer and a
+// pre-computed data hash JSON. asset may be nil if the hash JSON already
+// contains the computed hash values.
+func (b *Builder) SignDataHashedEmbeddable(signer Signer, dataHashJson string, format string, asset *os.File) ([]byte, error) {
+	adapter, err := newSigner(signer)
+	if err != nil {
+		return nil, err
+	}
+	defer adapter.Close()
+
+	cdh := C.CString(dataHashJson)
+	defer C.free(unsafe.Pointer(cdh))
+	cformat := C.CString(format)
+	defer C.free(unsafe.Pointer(cformat))
+
+	var assetPtr *C.C2paStream
+	if asset != nil {
+		s, err := NewStream(asset)
+		if err != nil {
+			return nil, err
+		}
+		defer s.Close()
+		assetPtr = s.ptr
+	}
+
+	var bytesPtr *C.uchar
+	n := C.c2pa_builder_sign_data_hashed_embeddable(b.ptr, adapter.ptr, cdh, cformat, assetPtr, &bytesPtr)
+	if n < 0 {
+		return nil, fmt.Errorf("failed to sign data hashed embeddable: %s", c2paError())
+	}
+	return takeCBytes(bytesPtr, int64(n)), nil
+}
+
+// SignEmbeddable signs the manifest and returns composed bytes ready for
+// embedding. Operates in placeholder mode (after Placeholder) or direct mode
+// (when the builder already has a valid hard-binding assertion). The signer is
+// obtained from the Builder's Context.
+func (b *Builder) SignEmbeddable(format string) ([]byte, error) {
+	cformat := C.CString(format)
+	defer C.free(unsafe.Pointer(cformat))
+	var bytesPtr *C.uchar
+	n := C.c2pa_builder_sign_embeddable(b.ptr, cformat, &bytesPtr)
+	if n < 0 {
+		return nil, fmt.Errorf("failed to sign embeddable: %s", c2paError())
+	}
+	return takeCBytes(bytesPtr, int64(n)), nil
+}
+
+// SetDataHashExclusions registers the byte ranges where the composed
+// placeholder was embedded in the asset. Must be called after Placeholder and
+// before UpdateHashFromStream for DataHash workflows.
+func (b *Builder) SetDataHashExclusions(exclusions []HashExclusion) error {
+	flat := make([]C.uint64_t, 0, len(exclusions)*2)
+	for _, e := range exclusions {
+		flat = append(flat, C.uint64_t(e.Start), C.uint64_t(e.Length))
+	}
+	var ptr *C.uint64_t
+	if len(flat) > 0 {
+		ptr = &flat[0]
+	}
+	if C.c2pa_builder_set_data_hash_exclusions(b.ptr, ptr, C.uintptr_t(len(exclusions))) < 0 {
+		return fmt.Errorf("failed to set data hash exclusions: %s", c2paError())
+	}
+	return nil
+}
+
+// SetFixedSizeMerkle configures the builder to hash fixed-size chunks of data,
+// producing a Merkle tree per mdat. The unit is KB.
+func (b *Builder) SetFixedSizeMerkle(fixedSizeKB uint) error {
+	if C.c2pa_builder_set_fixed_size_merkle(b.ptr, C.uintptr_t(fixedSizeKB)) < 0 {
+		return fmt.Errorf("failed to set fixed size merkle: %s", c2paError())
+	}
+	return nil
+}
+
+// HashMdatBytes accumulates leaf hashes for an mdat box. mdatId starts at 0
+// and increments per mdat in the asset; data must be supplied in write order.
+func (b *Builder) HashMdatBytes(mdatId uint, data []byte, largeSize bool) error {
+	var dataPtr *C.uchar
+	if len(data) > 0 {
+		dataPtr = (*C.uchar)(unsafe.Pointer(&data[0]))
+	}
+	if C.c2pa_builder_hash_mdat_bytes(b.ptr, C.uintptr_t(mdatId), dataPtr, C.uintptr_t(len(data)), C.bool(largeSize)) < 0 {
+		return fmt.Errorf("failed to hash mdat bytes: %s", c2paError())
+	}
+	return nil
+}
+
+// UpdateHashFromStream updates the builder's hard-binding assertion by hashing
+// the asset stream. Detects DataHash, BmffHash, or BoxHash automatically.
+func (b *Builder) UpdateHashFromStream(format string, file *os.File) error {
+	cformat := C.CString(format)
+	defer C.free(unsafe.Pointer(cformat))
+
+	stream, err := NewStream(file)
+	if err != nil {
+		return err
+	}
+	defer stream.Close()
+
+	if C.c2pa_builder_update_hash_from_stream(b.ptr, cformat, stream.ptr) < 0 {
+		return fmt.Errorf("failed to update hash from stream: %s", c2paError())
+	}
+	return nil
+}
+
+// FormatEmbeddable converts a raw application/c2pa manifest into an
+// embeddable byte sequence for the given asset format.
+func FormatEmbeddable(format string, manifestBytes []byte) ([]byte, error) {
+	cformat := C.CString(format)
+	defer C.free(unsafe.Pointer(cformat))
+	var inPtr *C.uchar
+	if len(manifestBytes) > 0 {
+		inPtr = (*C.uchar)(unsafe.Pointer(&manifestBytes[0]))
+	}
+	var outPtr *C.uchar
+	n := C.c2pa_format_embeddable(cformat, inPtr, C.uintptr_t(len(manifestBytes)), &outPtr)
+	if n < 0 {
+		return nil, fmt.Errorf("failed to format embeddable: %s", c2paError())
+	}
+	return takeCBytes(outPtr, int64(n)), nil
+}
+
+// takeCBytes copies size bytes from a C-allocated buffer into a Go slice and
+// frees the C buffer.
+func takeCBytes(ptr *C.uchar, size int64) []byte {
+	if ptr == nil || size <= 0 {
+		return nil
+	}
+	out := C.GoBytes(unsafe.Pointer(ptr), C.int(size))
+	C.c2pa_free(unsafe.Pointer(ptr))
+	return out
 }

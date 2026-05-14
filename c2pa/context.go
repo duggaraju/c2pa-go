@@ -14,17 +14,11 @@ type Context struct {
 	ptr *C.C2paContext
 }
 
-// Ptr returns the underlying C pointer. Use carefully; callers must not keep
-// the pointer past the lifetime of the Context.
-func (c *Context) Ptr() *C.C2paContext {
-	return c.ptr
-}
-
 // NewContext creates a new immutable Context with default settings.
 func NewContext() (*Context, error) {
 	ptr := C.c2pa_context_new()
 	if ptr == nil {
-		return nil, fmt.Errorf("failed to create c2pa context: %s", C2paError())
+		return nil, fmt.Errorf("failed to create c2pa context: %s", c2paError())
 	}
 	return &Context{ptr: ptr}, nil
 }
@@ -42,7 +36,7 @@ func (c *Context) Close() {
 // Thread-safe.
 func (c *Context) Cancel() error {
 	if rc := C.c2pa_context_cancel(c.ptr); rc != 0 {
-		return fmt.Errorf("failed to cancel c2pa context: %s", C2paError())
+		return fmt.Errorf("failed to cancel c2pa context: %s", c2paError())
 	}
 	return nil
 }
