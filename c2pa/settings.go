@@ -21,7 +21,7 @@ type Settings struct {
 func NewSettings() (*Settings, error) {
 	ptr := C.c2pa_settings_new()
 	if ptr == nil {
-		return nil, fmt.Errorf("failed to create c2pa settings: %s", C2paError())
+		return nil, fmt.Errorf("failed to create c2pa settings: %s", c2paError())
 	}
 	return &Settings{ptr: ptr}, nil
 }
@@ -45,7 +45,7 @@ func (s *Settings) UpdateFromString(content, format string) error {
 	cFormat := C.CString(format)
 	defer C.free(unsafe.Pointer(cFormat))
 	if rc := C.c2pa_settings_update_from_string(s.ptr, cContent, cFormat); rc != 0 {
-		return fmt.Errorf("failed to update settings: %s", C2paError())
+		return fmt.Errorf("failed to update settings: %s", c2paError())
 	}
 	return nil
 }
@@ -61,7 +61,7 @@ func (s *Settings) SetValue(path, jsonValue string) error {
 	cValue := C.CString(jsonValue)
 	defer C.free(unsafe.Pointer(cValue))
 	if rc := C.c2pa_settings_set_value(s.ptr, cPath, cValue); rc != 0 {
-		return fmt.Errorf("failed to set settings value: %s", C2paError())
+		return fmt.Errorf("failed to set settings value: %s", c2paError())
 	}
 	return nil
 }

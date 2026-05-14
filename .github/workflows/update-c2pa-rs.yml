@@ -6,106 +6,218 @@ on:
     - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
-      ref:
-        description: 'c2pa-rs ref to pin to (branch, tag or SHA). Defaults to remote HEAD of the submodule.'
+      tag:
+        description: 'Specific c2pa-c-ffi tag to update to (e.g., c2pa-c-ffi-v0.62.0)'
         required: false
-        default: ''
+        type: string
 
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
-  bump:
+  check-and-update:
+    name: Check for new c2pa-c-ffi tags
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true
           fetch-depth: 0
-          # Use a token that can push branches and open PRs.
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure git
         run: |
-          git config user.name  'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Determine current submodule SHA
+      - name: Get current submodule commit
         id: current
         run: |
           set -euo pipefail
-          cur=$(git -C c2pa-rs rev-parse HEAD)
-          echo "sha=$cur" >> "$GITHUB_OUTPUT"
-          echo "Current c2pa-rs SHA: $cur"
-
-      - name: Update c2pa-rs submodule
-        id: update
-        run: |
-          set -euo pipefail
-          REF='${{ github.event.inputs.ref }}'
           cd c2pa-rs
-          git fetch --tags origin
-          if [ -n "$REF" ]; then
-            git checkout "$REF"
-          else
-            # Track the default upstream branch.
-            default_branch=$(git remote show origin | sed -n 's/.*HEAD branch: //p')
-            git checkout "$default_branch"
-            git pull --ff-only origin "$default_branch"
-          fi
-          new=$(git rev-parse HEAD)
-          echo "sha=$new" >> "$GITHUB_OUTPUT"
-          ver=$(grep -m1 '^version' Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')
-          echo "version=$ver" >> "$GITHUB_OUTPUT"
-          short=$(git rev-parse --short HEAD)
-          echo "short=$short" >> "$GITHUB_OUTPUT"
+          CURRENT_COMMIT=$(git rev-parse HEAD)
+          echo "commit=$CURRENT_COMMIT" >> "$GITHUB_OUTPUT"
 
-      - name: Detect changes
-        id: diff
+          # Try to find a c2pa-c-ffi tag pointing at the current commit.
+          CURRENT_TAG=$(git tag --points-at HEAD | grep '^c2pa-c-ffi-v' | sort -V | tail -1 || echo "")
+          echo "tag=$CURRENT_TAG" >> "$GITHUB_OUTPUT"
+          echo "Current submodule commit: $CURRENT_COMMIT"
+          echo "Current tag (if any): $CURRENT_TAG"
+
+      - name: Find latest c2pa-c-ffi tag
+        id: latest
         run: |
           set -euo pipefail
-          if [ '${{ steps.current.outputs.sha }}' = '${{ steps.update.outputs.sha }}' ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "c2pa-rs submodule is already up to date."
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+          cd c2pa-rs
+          git fetch --tags --force origin
+
+          LATEST_TAG=$(git tag -l 'c2pa-c-ffi-v*' \
+            | grep -E '^c2pa-c-ffi-v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -1)
+
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No c2pa-c-ffi tags found"
+            exit 1
           fi
 
-      - name: Update README c2pa-rs version references
-        if: steps.diff.outputs.changed == 'true'
-        env:
-          VER: ${{ steps.update.outputs.version }}
+          echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+          echo "Latest c2pa-c-ffi tag: $LATEST_TAG"
+
+          LATEST_COMMIT=$(git rev-list -n 1 "$LATEST_TAG")
+          echo "commit=$LATEST_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "Latest tag commit: $LATEST_COMMIT"
+
+      - name: Resolve target tag
+        id: target
         run: |
           set -euo pipefail
-          # Update the shields.io badge (e.g. c2pa--rs-v0.83.0-orange).
-          sed -i -E "s|c2pa--rs-v[0-9]+\.[0-9]+\.[0-9]+-orange|c2pa--rs-v${VER}-orange|g" README.md
-          # Update prose like: "track c2pa-rs `0.83.x`"
-          major_minor=$(echo "$VER" | awk -F. '{print $1"."$2}')
-          sed -i -E "s|track c2pa-rs \`[0-9]+\.[0-9]+\.x\`|track c2pa-rs \`${major_minor}.x\`|g" README.md
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TARGET_TAG="${{ github.event.inputs.tag }}"
+            echo "Using manually specified tag: $TARGET_TAG"
+          else
+            TARGET_TAG="${{ steps.latest.outputs.tag }}"
+            echo "Using latest discovered tag: $TARGET_TAG"
+          fi
 
-      - name: Create pull request
-        if: steps.diff.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v6
+          echo "tag=$TARGET_TAG" >> "$GITHUB_OUTPUT"
+
+          cd c2pa-rs
+          if ! git rev-parse "$TARGET_TAG" >/dev/null 2>&1; then
+            echo "Error: Tag $TARGET_TAG does not exist"
+            exit 1
+          fi
+
+          TARGET_COMMIT=$(git rev-list -n 1 "$TARGET_TAG")
+          echo "commit=$TARGET_COMMIT" >> "$GITHUB_OUTPUT"
+
+      - name: Check if update is needed
+        id: check
+        run: |
+          set -euo pipefail
+          CURRENT="${{ steps.current.outputs.commit }}"
+          TARGET="${{ steps.target.outputs.commit }}"
+
+          if [ "$CURRENT" = "$TARGET" ]; then
+            echo "Submodule is already at the target tag ${{ steps.target.outputs.tag }}"
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Update needed from ${{ steps.current.outputs.tag || steps.current.outputs.commit }} to ${{ steps.target.outputs.tag }}"
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update submodule
+        id: update
+        if: steps.check.outputs.needed == 'true'
+        run: |
+          set -euo pipefail
+          TARGET_TAG="${{ steps.target.outputs.tag }}"
+          BRANCH_NAME="bot/update-c2pa-rs-${TARGET_TAG}"
+          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
+          if [ -z "$DEFAULT_BRANCH" ]; then
+            DEFAULT_BRANCH="main"
+          fi
+
+          echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+
+          # Reset the bot branch from the default branch to avoid non-fast-forward push issues.
+          git fetch origin "$DEFAULT_BRANCH"
+          git checkout -B "$BRANCH_NAME" "origin/$DEFAULT_BRANCH"
+
+          # Move the submodule to the target tag.
+          cd c2pa-rs
+          git fetch --tags --force origin
+          git checkout "$TARGET_TAG"
+          cd ..
+
+          # Extract version number from tag (e.g., c2pa-c-ffi-v0.76.0 -> 0.76.0).
+          VERSION=$(echo "$TARGET_TAG" | sed 's/^c2pa-c-ffi-v//')
+          MAJOR_MINOR=$(echo "$VERSION" | awk -F. '{print $1"."$2}')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          # Update the c2pa-rs shields.io badge in README.md.
+          sed -i -E "s|c2pa--rs-v[0-9]+\.[0-9]+\.[0-9]+-orange|c2pa--rs-v${VERSION}-orange|g" README.md
+          # Update prose like: "track c2pa-rs `0.84.x`".
+          sed -i -E "s|track c2pa-rs \`[0-9]+\.[0-9]+\.x\`|track c2pa-rs \`${MAJOR_MINOR}.x\`|g" README.md
+
+          git add c2pa-rs README.md
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "chore(c2pa-rs): bump submodule to ${TARGET_TAG}"
+          git push --force-with-lease origin "$BRANCH_NAME"
+
+      - name: Create Pull Request
+        if: steps.check.outputs.needed == 'true'
+        uses: actions/github-script@v7
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: bot/update-c2pa-rs
-          delete-branch: true
-          commit-message: |
-            chore(c2pa-rs): bump submodule to ${{ steps.update.outputs.short }} (v${{ steps.update.outputs.version }})
-          title: 'chore(c2pa-rs): bump submodule to v${{ steps.update.outputs.version }} (${{ steps.update.outputs.short }})'
-          body: |
-            Automated update of the `c2pa-rs` submodule.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const targetTag = '${{ steps.target.outputs.tag }}';
+            const branchName = '${{ steps.update.outputs.branch }}';
+            const currentTagFromOutput = '${{ steps.current.outputs.tag }}';
+            const currentTag = currentTagFromOutput || 'unknown';
 
-            - Previous: `${{ steps.current.outputs.sha }}`
-            - New: `${{ steps.update.outputs.sha }}`
-            - Upstream version: `v${{ steps.update.outputs.version }}`
+            const title = `chore(c2pa-rs): bump submodule to ${targetTag}`;
+            const body = `## Submodule Update
 
-            README references have been updated to match.
-          labels: |
-            dependencies
-            automated
-          add-paths: |
-            c2pa-rs
-            README.md
+            This PR updates the \`c2pa-rs\` submodule to the latest C FFI release.
+
+            **Target Tag:** \`${targetTag}\`
+            **Previous Tag:** \`${currentTag}\`
+            **Previous Commit:** \`${{ steps.current.outputs.commit }}\`
+            **New Commit:** \`${{ steps.target.outputs.commit }}\`
+
+            ### Changes
+
+            This automated update tracks the upstream c2pa-rs C FFI releases to keep the Go bindings up-to-date. The README badge and version references have been updated to match.
+
+            ### Checklist
+
+            - [ ] Review the [c2pa-rs release notes](https://github.com/contentauth/c2pa-rs/releases/tag/${targetTag})
+            - [ ] Build and test the changes
+            - [ ] Verify native bindings compatibility
+            - [ ] Update any related documentation if needed
+
+            ---
+            *This PR was automatically created by the [Update c2pa-rs submodule workflow](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).*`;
+
+            try {
+              const { data: existingPRs } = await github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head: `${context.repo.owner}:${branchName}`,
+                state: 'open'
+              });
+
+              if (existingPRs.length > 0) {
+                console.log(`PR already exists: #${existingPRs[0].number}`);
+                return;
+              }
+
+              const { data: pr } = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                head: branchName,
+                base: context.payload.repository.default_branch || 'main',
+                body: body
+              });
+
+              console.log(`Created PR #${pr.number}: ${pr.html_url}`);
+
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                labels: ['dependencies', 'submodule-update', 'automated']
+              });
+            } catch (error) {
+              console.error('Error creating PR:', error);
+              throw error;
+            }

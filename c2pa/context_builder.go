@@ -17,7 +17,7 @@ type ContextBuilder struct {
 func NewContextBuilder() (*ContextBuilder, error) {
 	ptr := C.c2pa_context_builder_new()
 	if ptr == nil {
-		return nil, fmt.Errorf("failed to create c2pa context builder: %s", C2paError())
+		return nil, fmt.Errorf("failed to create c2pa context builder: %s", c2paError())
 	}
 	return &ContextBuilder{ptr: ptr}, nil
 }
@@ -30,22 +30,62 @@ func (b *ContextBuilder) Close() {
 	}
 }
 
-// SetSigner attaches a signer to the context. The builder takes ownership of
-// the underlying C signer; the SignerAdapter's pointer is cleared so its
-// Close() will not double-free it. The Go-side handle is still released when
-// the SignerAdapter is closed.
-func (b *ContextBuilder) SetSigner(signer *SignerAdapter) error {
+// SetSigner attaches a signer to the context. The builder wraps the supplied
+// Signer in an internal C-callable adapter and takes ownership of it; the
+// adapter is kept alive for the lifetime of the Context produced by Build()
+// and released when that Context is closed.
+func (b *ContextBuilder) SetSigner(signer Signer) error {
 	if b.ptr == nil {
 		return fmt.Errorf("context builder is closed")
 	}
-	if signer == nil || signer.ptr == nil {
+	if signer == nil {
 		return fmt.Errorf("signer is nil")
 	}
-	if rc := C.c2pa_context_builder_set_signer(b.ptr, signer.ptr); rc != 0 {
-		return fmt.Errorf("failed to set signer on context builder: %s", C2paError())
+	adapter, err := newSigner(signer)
+	if err != nil {
+		return err
+	}
+	if rc := C.c2pa_context_builder_set_signer(b.ptr, adapter.ptr); rc != 0 {
+		adapter.Close()
+		return fmt.Errorf("failed to set signer on context builder: %s", c2paError())
 	}
 	// The builder consumed the C signer pointer; prevent double free.
-	signer.ptr = nil
+	adapter.ptr = nil
+	return nil
+}
+
+// SetSignerInfo creates a C2PA signer from a local certificate + private key
+// (and optional RFC 3161 timestamp URL) and attaches it to the context.
+func (b *ContextBuilder) SetSignerInfo(info SignerInfo) error {
+	if b.ptr == nil {
+		return fmt.Errorf("context builder is closed")
+	}
+	cAlg := C.CString(info.Alg)
+	defer C.free(unsafe.Pointer(cAlg))
+	cCert := C.CString(info.SignCert)
+	defer C.free(unsafe.Pointer(cCert))
+	cKey := C.CString(info.PrivateKey)
+	defer C.free(unsafe.Pointer(cKey))
+	var cTaUrl *C.char
+	if info.TimestampUrl != "" {
+		cTaUrl = C.CString(info.TimestampUrl)
+		defer C.free(unsafe.Pointer(cTaUrl))
+	}
+
+	cInfo := C.C2paSignerInfo{
+		alg:         cAlg,
+		sign_cert:   cCert,
+		private_key: cKey,
+		ta_url:      cTaUrl,
+	}
+	cSigner := C.c2pa_signer_from_info(&cInfo)
+	if cSigner == nil {
+		return fmt.Errorf("failed to create signer from info: %s", c2paError())
+	}
+	if rc := C.c2pa_context_builder_set_signer(b.ptr, cSigner); rc != 0 {
+		C.c2pa_free(unsafe.Pointer(cSigner))
+		return fmt.Errorf("failed to set signer on context builder: %s", c2paError())
+	}
 	return nil
 }
 
@@ -59,7 +99,7 @@ func (b *ContextBuilder) SetSettings(settings *Settings) error {
 		return fmt.Errorf("settings is nil")
 	}
 	if rc := C.c2pa_context_builder_set_settings(b.ptr, settings.ptr); rc != 0 {
-		return fmt.Errorf("failed to set settings on context builder: %s", C2paError())
+		return fmt.Errorf("failed to set settings on context builder: %s", c2paError())
 	}
 	return nil
 }
@@ -82,7 +122,7 @@ func (b *ContextBuilder) SetHttpResolver(resolver *HttpResolverAdapter) error {
 		return fmt.Errorf("http resolver is nil")
 	}
 	if rc := C.c2pa_context_builder_set_http_resolver(b.ptr, resolver.ptr); rc != 0 {
-		return fmt.Errorf("failed to set http resolver on context builder: %s", C2paError())
+		return fmt.Errorf("failed to set http resolver on context builder: %s", c2paError())
 	}
 	// The builder consumed the C resolver pointer; prevent double free.
 	resolver.ptr = nil
@@ -98,7 +138,7 @@ func (b *ContextBuilder) Build() (*Context, error) {
 	// The builder is consumed regardless of success.
 	b.ptr = nil
 	if ptr == nil {
-		return nil, fmt.Errorf("failed to build c2pa context: %s", C2paError())
+		return nil, fmt.Errorf("failed to build c2pa context: %s", c2paError())
 	}
 	return &Context{ptr: ptr}, nil
 }

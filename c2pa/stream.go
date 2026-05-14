@@ -17,8 +17,8 @@ type Stream struct {
 	handle cgo.Handle
 }
 
-//export StreamRead
-func StreamRead(context C.uintptr_t, buffer *C.uint8_t, size C.intptr_t) C.intptr_t {
+//export streamRead
+func streamRead(context C.uintptr_t, buffer *C.uint8_t, size C.intptr_t) C.intptr_t {
 	handle := cgo.Handle(context)
 	stream := handle.Value().(Stream)
 	slice := unsafe.Slice((*byte)(buffer), (int)(size))
@@ -32,8 +32,8 @@ func StreamRead(context C.uintptr_t, buffer *C.uint8_t, size C.intptr_t) C.intpt
 	return C.intptr_t(n)
 }
 
-//export StreamSeek
-func StreamSeek(context C.uintptr_t, offset C.intptr_t, mode C.C2paSeekMode) C.intptr_t {
+//export streamSeek
+func streamSeek(context C.uintptr_t, offset C.intptr_t, mode C.C2paSeekMode) C.intptr_t {
 	handle := cgo.Handle(context)
 	stream := handle.Value().(Stream)
 	n, err := stream.file.Seek(int64(offset), int(mode))
@@ -43,8 +43,8 @@ func StreamSeek(context C.uintptr_t, offset C.intptr_t, mode C.C2paSeekMode) C.i
 	return C.intptr_t(n)
 }
 
-//export StreamWrite
-func StreamWrite(context C.uintptr_t, buffer *C.uint8_t, size C.intptr_t) C.intptr_t {
+//export streamWrite
+func streamWrite(context C.uintptr_t, buffer *C.uint8_t, size C.intptr_t) C.intptr_t {
 	handle := cgo.Handle(context)
 	stream := handle.Value().(Stream)
 	slice := unsafe.Slice((*byte)(buffer), (int)(size))
@@ -55,8 +55,8 @@ func StreamWrite(context C.uintptr_t, buffer *C.uint8_t, size C.intptr_t) C.intp
 	return C.intptr_t(n)
 }
 
-//export StreamFlush
-func StreamFlush(context C.uintptr_t) C.intptr_t {
+//export streamFlush
+func streamFlush(context C.uintptr_t) C.intptr_t {
 	handle := cgo.Handle(context)
 	stream := handle.Value().(Stream)
 	err := stream.file.Sync()
@@ -78,7 +78,7 @@ func NewStream(file *os.File) (*Stream, error) {
 	stream.handle = cgo.NewHandle(stream)
 	stream.ptr = C.create_stream(C.uintptr_t(stream.handle))
 	if stream.ptr == nil {
-		err := C2paError()
+		err := c2paError()
 		return nil, fmt.Errorf("failed to create stream: %s", err)
 	}
 
@@ -89,6 +89,3 @@ func (s *Stream) Close() {
 	C.c2pa_release_stream(s.ptr)
 	s.handle.Delete()
 }
-
-// Ptr returns the underlying C pointer for the stream.
-func (s *Stream) Ptr() *C.C2paStream { return s.ptr }

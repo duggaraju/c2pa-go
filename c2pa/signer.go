@@ -27,44 +27,63 @@ type Signer interface {
 	Certificates() string
 }
 
-type SignerAdapter struct {
+// SignerInfo configures a built-in signer that signs locally with a private
+// key. It maps to C2paSignerInfo and is consumed by ContextBuilder.SetSignerInfo.
+type SignerInfo struct {
+	// Alg is the signing algorithm name (e.g. "ps256", "es256").
+	Alg string
+	// SignCert is the public certificate chain in PEM format.
+	SignCert string
+	// PrivateKey is the private key in PEM format.
+	PrivateKey string
+	// TimestampUrl is an optional RFC 3161 timestamp authority URL.
+	TimestampUrl string
+}
+
+type signerAdapter struct {
 	signer Signer
 	ptr    *C.C2paSigner
 	handle cgo.Handle
 }
 
-//export GoSignerCallback
-func GoSignerCallback(context C.uintptr_t, input *C.uint8_t, input_size C.uintptr_t, output *C.uint8_t, output_size C.uintptr_t) C.intptr_t {
+//export signerCallback
+func signerCallback(context C.uintptr_t, input *C.uint8_t, input_size C.uintptr_t, output *C.uint8_t, output_size C.uintptr_t) C.intptr_t {
 	handle := cgo.Handle(context)
-	signerAdapter, ok := handle.Value().(*SignerAdapter)
-	if !ok || signerAdapter == nil || signerAdapter.signer == nil {
+	adapter, ok := handle.Value().(*signerAdapter)
+	if !ok || adapter == nil || adapter.signer == nil {
 		return C.intptr_t(-1)
 	}
 
 	in := unsafe.Slice((*byte)(unsafe.Pointer(input)), int(input_size))
 	out := unsafe.Slice((*byte)(unsafe.Pointer(output)), int(output_size))
 
-	n, err := signerAdapter.signer.Sign(in, out)
+	n, err := adapter.signer.Sign(in, out)
 	if err != nil {
 		return C.intptr_t(-1)
 	}
 	return C.intptr_t(n)
 }
 
-func (s *SignerAdapter) Close() {
-	C.c2pa_free(unsafe.Pointer(s.ptr))
+func (s *signerAdapter) Close() {
+	if s.ptr != nil {
+		C.c2pa_free(unsafe.Pointer(s.ptr))
+		s.ptr = nil
+	}
 	s.handle.Delete()
 }
 
-func (s *SignerAdapter) Sign(input []byte, output []byte) (int, error) {
+func (s *signerAdapter) Sign(input []byte, output []byte) (int, error) {
 	if s.signer != nil {
 		return s.signer.Sign(input, output)
 	}
 	return -1, nil
 }
 
-func NewSigner(signer Signer) (*SignerAdapter, error) {
-	s := &SignerAdapter{
+// newSigner wraps a user-provided Signer in an adapter that exposes a
+// C-callable signing callback. The returned adapter owns a C2paSigner and a
+// cgo.Handle; both are released by Close.
+func newSigner(signer Signer) (*signerAdapter, error) {
+	s := &signerAdapter{
 		signer: signer,
 		ptr:    nil,
 	}
@@ -78,7 +97,7 @@ func NewSigner(signer Signer) (*SignerAdapter, error) {
 
 	s.ptr = C.create_signer(C.uintptr_t(s.handle), C.C2paSigningAlg(signer.Alg()), taUrl, certificates)
 	if s.ptr == nil {
-		return nil, fmt.Errorf("failed to create signer: %s", C2paError())
+		return nil, fmt.Errorf("failed to create signer: %s", c2paError())
 	}
 	return s, nil
 }
