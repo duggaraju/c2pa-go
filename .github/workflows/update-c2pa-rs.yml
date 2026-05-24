@@ -51,7 +51,10 @@ jobs:
         run: |
           set -euo pipefail
           cd c2pa-rs
-          git fetch --tags --force origin
+          # actions/checkout persists the workflow token into the submodule
+          # config, but c2pa-rs is fetched from a different public repo.
+          git config --local --unset-all http.https://github.com/.extraheader || true
+          GIT_CONFIG_GLOBAL=/dev/null git fetch --tags --force origin
 
           LATEST_TAG=$(git tag -l 'c2pa-c-ffi-v*' \
             | grep -E '^c2pa-c-ffi-v[0-9]+\.[0-9]+\.[0-9]+$' \
@@ -128,7 +131,8 @@ jobs:
 
           # Move the submodule to the target tag.
           cd c2pa-rs
-          git fetch --tags --force origin
+          git config --local --unset-all http.https://github.com/.extraheader || true
+          GIT_CONFIG_GLOBAL=/dev/null git fetch --tags --force origin
           git checkout "$TARGET_TAG"
           cd ..
 
