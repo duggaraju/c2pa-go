@@ -3,7 +3,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/duggaraju/c2pa-go/c2pa.svg)](https://pkg.go.dev/github.com/duggaraju/c2pa-go/c2pa)
 [![Go Report Card](https://goreportcard.com/badge/github.com/duggaraju/c2pa-go/c2pa)](https://goreportcard.com/report/github.com/duggaraju/c2pa-go/c2pa)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![c2pa-rs](https://img.shields.io/badge/c2pa--rs-v0.84.1-orange?logo=rust)](https://github.com/contentauth/c2pa-rs)
+[![c2pa-rs](https://img.shields.io/badge/c2pa--rs-v0.85.0-orange?logo=rust)](https://github.com/contentauth/c2pa-rs)
 
 Go bindings for the [c2pa-rs](https://github.com/contentauth/c2pa-rs) Content
 Authenticity SDK. This package exposes the C2PA reader, builder, signer and
@@ -13,7 +13,7 @@ Content Authenticity and Content Integrity metadata to media assets.
 
 **Keywords:** c2pa, c2pa-go,  c2pa-rs, Content Authenticity, Content Integrity, Content Credentials, content provenance.
 
-The bindings track c2pa-rs `0.84.x` and link against the `c2pa_c` shared library
+The bindings track c2pa-rs `0.85.x` and link against the `c2pa_c` shared library
 produced by the `c2pa_c_ffi` crate.
 
 ## Status
@@ -88,7 +88,7 @@ There are two supported paths:
    From a project that just depends on this module (no checkout needed):
 
    ```sh
-   go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@v0.84.1 \
+   go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@v0.85.0 \
        -dest ./c2pa-rs/target/release
    go build -tags=release ./...
    ```
@@ -134,11 +134,11 @@ and extract the bundle for your host:
 ```sh
 # From a checkout of this repo:
 go run ./c2pa/cmd/fetchlib                              # default version, default dest
-go run ./c2pa/cmd/fetchlib -version c2pa/v0.84.1        # pin a specific release
+go run ./c2pa/cmd/fetchlib -version c2pa/v0.85.0        # pin a specific release
 go run ./c2pa/cmd/fetchlib -dest /tmp/c2pa-libs -env    # also print suggested CGO_*FLAGS
 
 # Or from an arbitrary working directory, without cloning the repo:
-go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@v0.84.1 \
+go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@v0.85.0 \
     -dest ./c2pa-rs/target/release
 ```
 
