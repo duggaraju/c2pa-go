@@ -20,7 +20,7 @@ func main() {
 
 	// Support a global version flag as first argument: -v or --version
 	if os.Args[1] == "-v" || os.Args[1] == "--version" {
-		fmt.Printf("version: %s\n", c2pa.CpaVersion())
+		fmt.Printf("version: %s\n", c2pa.C2paVersion())
 		return
 	}
 

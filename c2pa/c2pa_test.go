@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCpaVersion(t *testing.T) {
-	v := CpaVersion()
+func TestC2paVersion(t *testing.T) {
+	v := C2paVersion()
 	assert.NotEmpty(t, v)
 	assert.Regexp(t, regexp.MustCompile(`^c2pa-c-ffi/\d+\.\d+\.\d+\s+c2pa-rs/\d+\.\d+\.\d+$`), v)
 }

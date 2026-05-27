@@ -6,12 +6,12 @@
 // Typical use from a checkout of this repo:
 //
 //	go run ./c2pa/cmd/fetchlib                # default version, default dest
-//	go run ./c2pa/cmd/fetchlib -version c2pa/v0.84.1
+//	go run ./c2pa/cmd/fetchlib -version c2pa/v0.85.0
 //	go run ./c2pa/cmd/fetchlib -dest /tmp/c2pa-libs
 //
 // Or directly without cloning:
 //
-//	go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@v0.84.1 \
+//	go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@v0.85.0 \
 //	    -dest ./c2pa-rs/target/release
 package main
 
@@ -31,13 +31,13 @@ import (
 
 // DefaultTag is the release tag fetched when -version is not provided. It is
 // updated together with the matching c2pa-rs submodule pin and module tag.
-const DefaultTag = "c2pa/v0.84.1"
+const DefaultTag = "c2pa/v0.85.0"
 
 // repoSlug is the GitHub repository hosting the release binaries.
 const repoSlug = "duggaraju/c2pa-go"
 
 func main() {
-	tag := flag.String("version", DefaultTag, "release tag to fetch (e.g. c2pa/v0.84.1)")
+	tag := flag.String("version", DefaultTag, "release tag to fetch (e.g. c2pa/v0.85.0)")
 	dest := flag.String("dest", "c2pa-rs/target/release", "destination directory (created if missing)")
 	osName := flag.String("os", runtime.GOOS, "target operating system")
 	arch := flag.String("arch", runtime.GOARCH, "target architecture")
