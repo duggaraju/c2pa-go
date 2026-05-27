@@ -24,10 +24,7 @@ jobs:
           - { os: macos,   goarch: amd64, runner: macos-26-intel,    rust_toolchain: stable }
           - { os: macos,   goarch: arm64, runner: macos-latest,      rust_toolchain: stable }
           - { os: windows, goarch: amd64, runner: windows-latest,    rust_toolchain: stable-x86_64-pc-windows-gnu }
-          # windows/arm64 temporarily disabled: gnullvm linker setup is not
-          # working reliably in CI. Re-enable once the toolchain story is
-          # sorted out.
-          # - { os: windows, goarch: arm64, runner: windows-11-arm, rust_toolchain: stable-aarch64-pc-windows-gnullvm }
+          - { os: windows, goarch: arm64, runner: windows-11-arm,    rust_toolchain: stable-aarch64-pc-windows-gnullvm }
     env:
       GO_VERSION: '1.25.x'
     defaults:
@@ -71,27 +68,89 @@ jobs:
           node-version: '20'
 
       - name: Run go generate (release)
+        if: matrix.os != 'windows' || matrix.goarch != 'arm64'
         # Regenerates ./c2pa/schema and builds c2pa-rs/c2pa_c_ffi for the
         # release flavor via the go:generate directives in c2pa/generate*.go.
         env:
           CGO_ENABLED: '1'
         run: go generate -tags=release ./c2pa/...
 
+      - name: Run go generate (release, windows arm64)
+        if: matrix.os == 'windows' && matrix.goarch == 'arm64'
+        shell: msys2 {0}
+        env:
+          CGO_ENABLED: '1'
+          GOOS: windows
+          GOARCH: arm64
+          CC: clang
+          CXX: clang++
+          AR: llvm-ar
+          CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER: clang
+          CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_AR: llvm-ar
+        run: go generate -tags=release ./c2pa/...
+
       - name: Go vet (release)
+        if: matrix.os != 'windows' || matrix.goarch != 'arm64'
         env:
           CGO_ENABLED: '1'
         run: go vet -tags=release ./c2pa/...
 
+      - name: Go vet (release, windows arm64)
+        if: matrix.os == 'windows' && matrix.goarch == 'arm64'
+        shell: msys2 {0}
+        env:
+          CGO_ENABLED: '1'
+          GOOS: windows
+          GOARCH: arm64
+          CC: clang
+          CXX: clang++
+          AR: llvm-ar
+          CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER: clang
+          CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_AR: llvm-ar
+        run: go vet -tags=release ./c2pa/...
+
       - name: Go build (release)
+        if: matrix.os != 'windows' || matrix.goarch != 'arm64'
         env:
           CGO_ENABLED: '1'
         run: |
           go build -tags=release ./c2pa
           go build -tags=release -o dist/demo ./example
 
-      - name: Go test (release)
+      - name: Go build (release, windows arm64)
+        if: matrix.os == 'windows' && matrix.goarch == 'arm64'
+        shell: msys2 {0}
         env:
           CGO_ENABLED: '1'
+          GOOS: windows
+          GOARCH: arm64
+          CC: clang
+          CXX: clang++
+          AR: llvm-ar
+          CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER: clang
+          CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_AR: llvm-ar
+        run: |
+          go build -tags=release ./c2pa
+          go build -tags=release -o dist/demo ./example
+
+      - name: Go test (release)
+        if: matrix.os != 'windows' || matrix.goarch != 'arm64'
+        env:
+          CGO_ENABLED: '1'
+        run: go test -tags=release -v ./c2pa/...
+
+      - name: Go test (release, windows arm64)
+        if: matrix.os == 'windows' && matrix.goarch == 'arm64'
+        shell: msys2 {0}
+        env:
+          CGO_ENABLED: '1'
+          GOOS: windows
+          GOARCH: arm64
+          CC: clang
+          CXX: clang++
+          AR: llvm-ar
+          CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER: clang
+          CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_AR: llvm-ar
         run: go test -tags=release -v ./c2pa/...
 
       - name: Stage release binaries

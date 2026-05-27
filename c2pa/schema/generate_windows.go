@@ -17,7 +17,7 @@ package schema
 
 //go:generate cmd /C "cd ../../c2pa-rs/export_schema && cargo run --release --features c2pa/rust_native_crypto"
 //go:generate cmd /C copy /Y ..\..\c2pa-rs\export_schema\target\schema\Settings.schema.json Settings.schema.json
-//go:generate powershell -NoProfile -Command "(Get-Content ../../c2pa-rs/export_schema/target/schema/Builder.schema.json) -replace '\"title\": \"Builder\"', '\"title\": \"ManifestDefinition\"' | Set-Content ManifestDefinition.schema.json"
+//go:generate cmd /C copy /Y ..\..\c2pa-rs\export_schema\target\schema\ManifestDefinition.schema.json ManifestDefinition.schema.json
 //go:generate powershell -NoProfile -Command "(Get-Content ../../c2pa-rs/export_schema/target/schema/Reader.schema.json) -replace '\"title\": \"Reader\"', '\"title\": \"ManifestStore\"' | Set-Content ManifestStore.schema.json"
 //go:generate npx --yes quicktype -s schema -l go --package schema --out schema.go ManifestDefinition.schema.json ManifestStore.schema.json Settings.schema.json
 //go:generate cmd /C del /Q /F ManifestDefinition.schema.json ManifestStore.schema.json Settings.schema.json

@@ -14,7 +14,13 @@ extern "C" {
 #define WEAK
 #endif
 
-extern intptr_t signerCallback(uintptr_t context, uint8_t* input, uintptr_t input_size, uint8_t* output, uintptr_t output_size);
+#ifdef _WIN32
+#define CGO_EXPORT __declspec(dllexport)
+#else
+#define CGO_EXPORT
+#endif
+
+extern CGO_EXPORT intptr_t signerCallback(uintptr_t context, uint8_t* input, uintptr_t input_size, uint8_t* output, uintptr_t output_size);
 
 WEAK intptr_t signer_callback(const void* context, const uint8_t* input, uintptr_t input_size, uint8_t* output, uintptr_t output_size)
 {
@@ -26,23 +32,23 @@ WEAK C2paSigner* create_signer(uintptr_t context, C2paSigningAlg alg, const char
     return c2pa_signer_create((const void*)context, (SignerCallback)signer_callback, alg, certificates, tsa_url);
 }
 
-extern intptr_t streamRead(uintptr_t context, uint8_t *buffer, intptr_t size);
+extern CGO_EXPORT intptr_t streamRead(uintptr_t context, uint8_t *buffer, intptr_t size);
 WEAK intptr_t stream_read(StreamContext *context, uint8_t *buffer, intptr_t size) {
 
 	return streamRead((uintptr_t)context, buffer, size);
 }
 
-extern intptr_t streamWrite(uintptr_t context, uint8_t* buffer, intptr_t size);
+extern CGO_EXPORT intptr_t streamWrite(uintptr_t context, uint8_t* buffer, intptr_t size);
 WEAK intptr_t stream_write(StreamContext *context, const uint8_t *buffer, intptr_t size) {
 	return streamWrite((uintptr_t)context, (uint8_t*)buffer, size);
 }
 
-extern intptr_t streamSeek(uintptr_t context, intptr_t offset, C2paSeekMode mode);
+extern CGO_EXPORT intptr_t streamSeek(uintptr_t context, intptr_t offset, C2paSeekMode mode);
 WEAK intptr_t stream_seek(StreamContext *context, intptr_t offset, C2paSeekMode mode) {
 	return streamSeek((uintptr_t)context, offset, mode);
 }
 
-extern intptr_t streamFlush(uintptr_t context);
+extern CGO_EXPORT intptr_t streamFlush(uintptr_t context);
 WEAK intptr_t stream_flush(StreamContext *context) {
 	return streamFlush((uintptr_t)context);
 }
@@ -51,7 +57,7 @@ WEAK C2paStream* create_stream(uintptr_t context) {
 	return c2pa_create_stream((StreamContext*)context, stream_read, stream_seek, stream_write, stream_flush);
 }
 
-extern int httpResolverCallback(uintptr_t context, C2paHttpRequest* request, C2paHttpResponse* response);
+extern CGO_EXPORT int httpResolverCallback(uintptr_t context, C2paHttpRequest* request, C2paHttpResponse* response);
 
 WEAK int http_resolver_callback(void* context, const C2paHttpRequest* request, C2paHttpResponse* response) {
 	return httpResolverCallback((uintptr_t)context, (C2paHttpRequest*)request, response);

@@ -47,37 +47,9 @@ func (r *Settings) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
-// Use a Builder to add a signed manifest to an asset.
-//
-// ## Example: Adding a signed manifest to an asset
-//
-// ```
-// # use c2pa::Result;
-// use std::io::Cursor;
-//
-// use c2pa::{settings::Settings, Builder, SigningAlg};
-// use serde::Serialize;
-//
-// #[derive(Serialize)]
-// struct Test {
-// my_tag: usize,
-// }
-//
-// # fn main() -> Result<()> {
-// {
-// Settings::from_toml(include_str!("../tests/fixtures/test_settings.toml"))?;
-// let mut builder = Builder::from_json(r#"{"title": "Test"}"#)?;
-// builder.add_assertion("org.contentauth.test", &Test { my_tag: 42 })?;
-//
-// // embed a manifest using the signer
-// let mut source = std::fs::File::open("tests/fixtures/C.jpg")?;
-// let mut dest = Cursor::new(Vec::new());
-// let signer = Settings::signer()?;
-// let _c2pa_data = builder.sign(&signer, "image/jpeg", &mut source, &mut dest)?;
-// }
-// # Ok(())
-// # }
-// ```
+// Use a ManifestDefinition to define a manifest and to build a `ManifestStore`.
+// A manifest is a collection of ingredients and assertions
+// used to define a claim that can be signed and embedded into a file.
 type ManifestDefinition struct {
 	// A list of assertions                                                                                                  
 	Assertions                                                                                   []AssertionElement          `json:"assertions,omitempty"`
@@ -109,15 +81,11 @@ type ManifestDefinition struct {
 	Ingredients                                                                                  []IngredientElement         `json:"ingredients,omitempty"`
 	// Instance ID from `xmpMM:InstanceID` in XMP metadata.                                                                  
 	InstanceID                                                                                   *string                     `json:"instance_id,omitempty"`
-	// A builder should construct a created, opened or updated manifest.                                                     
-	Intent                                                                                       *ManifestDefinitionIntent   `json:"intent"`
 	// Allows you to pre-define the manifest label, which must be unique.                                                    
 	// Not intended for general use.  If not set, it will be assigned automatically.                                         
 	Label                                                                                        *string                     `json:"label"`
 	// Optional manifest metadata. This will be deprecated in the future; not recommended to use.                            
 	Metadata                                                                                     []MetadatumElement          `json:"metadata"`
-	// If true, the manifest store will not be embedded in the asset on sign.                                                
-	NoEmbed                                                                                      bool                        `json:"no_embed"`
 	// JUMBF URIs of assertions to redact from ingredient manifests.                                                         
 	//                                                                                                                       
 	// Each URI has the form                                                                                                 
@@ -127,17 +95,9 @@ type ManifestDefinition struct {
 	// guide](https://github.com/contentauth/c2pa-rs/blob/main/docs/redaction.md)                                            
 	// for details.                                                                                                          
 	Redactions                                                                                   []string                    `json:"redactions"`
-	// Optional remote URL for the manifest.                                                                                 
-	RemoteURL                                                                                    *string                     `json:"remote_url"`
 	// An optional ResourceRef to a thumbnail image that represents the asset that was signed.                               
 	// Must be available when the manifest is signed.                                                                        
 	Thumbnail                                                                                    *ThumbnailClass             `json:"thumbnail"`
-	// Manifest labels to fetch timestamps for.                                                                              
-	//                                                                                                                       
-	// Examples of a manifest label may include:                                                                             
-	// - `contentauth:urn:uuid:c2677d4b-0a93-4444-876f-ed2f2d40b8cf`                                                         
-	// - `urn:c2pa:fa479510-2a7d-c165-7b26-488a267f4c6a`                                                                     
-	TimestampManifestLabels                                                                      []string                    `json:"timestamp_manifest_labels"`
 	// A human-readable title, generally source filename.                                                                    
 	Title                                                                                        *string                     `json:"title"`
 	// Optional prefix added to the generated Manifest Label                                                                 
@@ -540,14 +500,6 @@ type IngredientDeltaElement struct {
 	IngredientAssertionURI                                    string              `json:"ingredientAssertionURI"`
 	// Validation results for the ingredient's active manifest                    
 	ValidationDeltas                                          ActiveManifestClass `json:"validationDeltas"`
-}
-
-// This is a new digital creation, a DigitalSourceType is required.
-//
-// The Manifest must not have have a parent ingredient.
-// A `c2pa.created` action will be added if not provided.
-type IntentClass struct {
-	Create string `json:"create"`
 }
 
 // Use a Reader to read and validate a manifest store.
@@ -1113,7 +1065,7 @@ type Builder struct {
 	//                                                                                                                                                                
 	// [`BuilderIntent`]: crate::BuilderIntent                                                                                                                        
 	// [`Builder`]: crate::Builder                                                                                                                                    
-	Intent                                                                                                                                *BuilderIntent              `json:"intent"`
+	Intent                                                                                                                                *Intent                     `json:"intent"`
 	// When `true`, use [`BoxHash`] instead of [`crate::assertions::DataHash`] for formats                                                                            
 	// that support it (JPEG, PNG, GIF, etc.) when no explicit hard binding assertion has                                                                             
 	// been set.                                                                                                                                                      
@@ -1315,7 +1267,7 @@ type AutoTimestampAssertion struct {
 //
 // The Manifest must not have have a parent ingredient.
 // A `c2pa.created` action will be added if not provided.
-type IntentIntent struct {
+type IntentClass struct {
 	Create string `json:"create"`
 }
 
@@ -1760,24 +1712,6 @@ const (
 	ParentOf    Relationship = "parentOf"
 )
 
-// This is an edit of a pre-existing parent asset.
-//
-// The Manifest must have a parent ingredient.
-// A parent ingredient will be generated from the source stream if not otherwise provided.
-// A `c2pa.opened action will be tied to the parent ingredient.
-//
-// A restricted version of Edit for non-editorial changes.
-//
-// There must be only one ingredient, as a parent.
-// No changes can be made to the hashed content of the parent.
-// There are additional restrictions on the types of changes that can be made.
-type Schema string
-
-const (
-	Edit   Schema = "edit"
-	Update Schema = "update"
-)
-
 // ECDSA with SHA-256
 //
 // ECDSA with SHA-384
@@ -1869,6 +1803,24 @@ const (
 	SettingsSchemaAll CertificateStatusFetchEnum = "all"
 )
 
+// This is an edit of a pre-existing parent asset.
+//
+// The Manifest must have a parent ingredient.
+// A parent ingredient will be generated from the source stream if not otherwise provided.
+// A `c2pa.opened action will be tied to the parent ingredient.
+//
+// A restricted version of Edit for non-editorial changes.
+//
+// There must be only one ingredient, as a parent.
+// No changes can be made to the hashed content of the parent.
+// There are additional restrictions on the types of changes that can be made.
+type IntentEnum string
+
+const (
+	Edit   IntentEnum = "edit"
+	Update IntentEnum = "update"
+)
+
 // An image in PNG format.
 //
 // An image in JPEG format.
@@ -1930,13 +1882,18 @@ func (x *HashUnion) MarshalJSON() ([]byte, error) {
 	return marshalUnion(nil, nil, nil, x.String, x.IntegerArray != nil, x.IntegerArray, false, nil, false, nil, false, nil, true)
 }
 
-// A builder should construct a created, opened or updated manifest.
-type ManifestDefinitionIntent struct {
-	Enum        *Schema
+// The default [`BuilderIntent`] for the [`Builder`].
+//
+// See [`BuilderIntent`] for more information.
+//
+// [`BuilderIntent`]: crate::BuilderIntent
+// [`Builder`]: crate::Builder
+type Intent struct {
+	Enum        *IntentEnum
 	IntentClass *IntentClass
 }
 
-func (x *ManifestDefinitionIntent) UnmarshalJSON(data []byte) error {
+func (x *Intent) UnmarshalJSON(data []byte) error {
 	x.IntentClass = nil
 	x.Enum = nil
 	var c IntentClass
@@ -1950,37 +1907,8 @@ func (x *ManifestDefinitionIntent) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (x *ManifestDefinitionIntent) MarshalJSON() ([]byte, error) {
+func (x *Intent) MarshalJSON() ([]byte, error) {
 	return marshalUnion(nil, nil, nil, nil, false, nil, x.IntentClass != nil, x.IntentClass, false, nil, x.Enum != nil, x.Enum, true)
-}
-
-// The default [`BuilderIntent`] for the [`Builder`].
-//
-// See [`BuilderIntent`] for more information.
-//
-// [`BuilderIntent`]: crate::BuilderIntent
-// [`Builder`]: crate::Builder
-type BuilderIntent struct {
-	Enum         *Schema
-	IntentIntent *IntentIntent
-}
-
-func (x *BuilderIntent) UnmarshalJSON(data []byte) error {
-	x.IntentIntent = nil
-	x.Enum = nil
-	var c IntentIntent
-	object, err := unmarshalUnion(data, nil, nil, nil, nil, false, nil, true, &c, false, nil, true, &x.Enum, true)
-	if err != nil {
-		return err
-	}
-	if object {
-		x.IntentIntent = &c
-	}
-	return nil
-}
-
-func (x *BuilderIntent) MarshalJSON() ([]byte, error) {
-	return marshalUnion(nil, nil, nil, nil, false, nil, x.IntentIntent != nil, x.IntentIntent, false, nil, x.Enum != nil, x.Enum, true)
 }
 
 func unmarshalUnion(data []byte, pi **int64, pf **float64, pb **bool, ps **string, haveArray bool, pa interface{}, haveObject bool, pc interface{}, haveMap bool, pm interface{}, haveEnum bool, pe interface{}, nullable bool) (bool, error) {

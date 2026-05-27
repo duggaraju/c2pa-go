@@ -9,8 +9,7 @@
 // the underlying c2pa-rs library:
 //
 //   - ManifestDefinition: the manifest JSON accepted by Builder.from_json.
-//     (Generated from c2pa-rs Builder.schema.json with the top-level title
-//     renamed to ManifestDefinition.)
+//     (Generated from c2pa-rs ManifestDefinition.schema.json.)
 //   - ManifestStore: the manifest store JSON returned by Reader.json.
 //     (Generated from c2pa-rs Reader.schema.json with the top-level title
 //     renamed to ManifestStore.)
