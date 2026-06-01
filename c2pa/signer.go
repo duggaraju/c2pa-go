@@ -40,16 +40,16 @@ type SignerInfo struct {
 	TimestampUrl string
 }
 
-type signerAdapter struct {
+type NativeSigner struct {
 	signer Signer
 	ptr    *C.C2paSigner
-	handle cgo.Handle
+	handles []cgo.Handle
 }
 
 //export signerCallback
 func signerCallback(context C.uintptr_t, input *C.uint8_t, input_size C.uintptr_t, output *C.uint8_t, output_size C.uintptr_t) C.intptr_t {
 	handle := cgo.Handle(context)
-	adapter, ok := handle.Value().(*signerAdapter)
+	adapter, ok := handle.Value().(*NativeSigner)
 	if !ok || adapter == nil || adapter.signer == nil {
 		return C.intptr_t(-1)
 	}
@@ -64,30 +64,37 @@ func signerCallback(context C.uintptr_t, input *C.uint8_t, input_size C.uintptr_
 	return C.intptr_t(n)
 }
 
-func (s *signerAdapter) Close() {
+func (s NativeSigner) Close() {
 	if s.ptr != nil {
 		C.c2pa_free(unsafe.Pointer(s.ptr))
 		s.ptr = nil
 	}
-	s.handle.Delete()
+	for _, handle := range s.handles {
+		if handle != 0 {
+			handle.Delete()
+		}
+	}
+	s.handles = nil
 }
 
-func (s *signerAdapter) Sign(input []byte, output []byte) (int, error) {
-	if s.signer != nil {
-		return s.signer.Sign(input, output)
+func (s *NativeSigner) ReserveSize() (int64, error) {
+	size := int64(C.c2pa_signer_reserve_size(s.ptr))
+	if size == -1 {
+		return 0, fmt.Errorf("failed to get signer reserve size: %s", c2paError())
 	}
-	return -1, nil
+	return size, nil
 }
 
 // newSigner wraps a user-provided Signer in an adapter that exposes a
 // C-callable signing callback. The returned adapter owns a C2paSigner and a
 // cgo.Handle; both are released by Close.
-func newSigner(signer Signer) (*signerAdapter, error) {
-	s := &signerAdapter{
+func newSigner(signer Signer) (*NativeSigner, error) {
+	s := &NativeSigner{
 		signer: signer,
 		ptr:    nil,
 	}
-	s.handle = cgo.NewHandle(s)
+	handle := cgo.NewHandle(s)
+	s.handles = []cgo.Handle{handle}
 	taUrl := C.CString(signer.TimeStampUrl())
 	defer C.free(unsafe.Pointer(taUrl))
 
@@ -95,9 +102,96 @@ func newSigner(signer Signer) (*signerAdapter, error) {
 	certificates := C.CString(certs)
 	defer C.free(unsafe.Pointer(certificates))
 
-	s.ptr = C.create_signer(C.uintptr_t(s.handle), C.C2paSigningAlg(signer.Alg()), taUrl, certificates)
+	s.ptr = C.create_signer(C.uintptr_t(handle), C.C2paSigningAlg(signer.Alg()), taUrl, certificates)
 	if s.ptr == nil {
 		return nil, fmt.Errorf("failed to create signer: %s", c2paError())
 	}
 	return s, nil
+}
+
+func NewSignerFromInfo(info SignerInfo) (*NativeSigner, error) {
+	cAlg := C.CString(info.Alg)
+	defer C.free(unsafe.Pointer(cAlg))
+	cCert := C.CString(info.SignCert)
+	defer C.free(unsafe.Pointer(cCert))
+	cKey := C.CString(info.PrivateKey)
+	defer C.free(unsafe.Pointer(cKey))
+	var cTaUrl *C.char
+	if info.TimestampUrl != "" {
+		cTaUrl = C.CString(info.TimestampUrl)
+		defer C.free(unsafe.Pointer(cTaUrl))
+	}
+
+	cInfo := C.C2paSignerInfo {
+		cAlg,
+		cCert,
+		cKey,
+		cTaUrl,
+	}
+	ptr := C.c2pa_signer_from_info(&cInfo)
+	if ptr == nil {
+		return nil, fmt.Errorf("failed to create signer from info: %s", c2paError())
+	}
+	return &NativeSigner{ptr: ptr}, nil
+}
+
+func NewIdentitySigner(c2paSigner Signer, identitySigner Signer, referencedAssertions []string, roles []string) (*NativeSigner, error) {
+	is, err := newSigner(identitySigner)
+	if err != nil {
+		return nil, err
+	}
+	defer is.Close()
+	cs, err := newSigner(c2paSigner)
+	if err != nil {
+		return nil, err
+	}
+	defer cs.Close()
+	return newIdentitySigner(cs, is, referencedAssertions, roles)
+}
+
+// NewIdentitySigner combines two native signers into a single signer that
+// emits both the C2PA claim signature and an X.509 identity assertion.
+// On success, ownership of both input signers transfers to the returned signer.
+func newIdentitySigner(c2paSigner *NativeSigner, identitySigner *NativeSigner, referencedAssertions []string, roles []string) (*NativeSigner, error) {
+	if c2paSigner == nil || c2paSigner.ptr == nil {
+		return nil, fmt.Errorf("c2pa signer is nil")
+	}
+	if identitySigner == nil || identitySigner.ptr == nil {
+		return nil, fmt.Errorf("identity signer is nil")
+	}
+
+	crefs, freeRefs := cStringArray(referencedAssertions)
+	defer freeRefs()
+	rolesPtr, freeRoles := cStringArray(roles)
+	defer freeRoles()
+
+	ptr := C.c2pa_identity_signer_create(c2paSigner.ptr, identitySigner.ptr, crefs, rolesPtr)
+	if ptr == nil {
+		return nil, fmt.Errorf("failed to create identity signer: %s", c2paError())
+	}
+
+	handles := append([]cgo.Handle{}, c2paSigner.handles...)
+	handles = append(handles, identitySigner.handles...)
+
+	c2paSigner.ptr = nil
+	c2paSigner.handles = nil
+	identitySigner.ptr = nil
+	identitySigner.handles = nil
+
+	return &NativeSigner{ptr: ptr, handles: handles}, nil
+}
+
+func cStringArray(values []string) (**C.char, func()) {
+	if len(values) == 0 {
+		return nil, func() {}
+	}
+	ptrs := make([]*C.char, len(values)+1)
+	for i, value := range values {
+		ptrs[i] = C.CString(value)
+	}
+	return &ptrs[0], func() {
+		for _, ptr := range ptrs[:len(values)] {
+			C.free(unsafe.Pointer(ptr))
+		}
+	}
 }

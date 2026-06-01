@@ -20,6 +20,15 @@ type Reader struct {
 	ptr *C.C2paReader
 }
 
+// NewDefaultReader creates a Reader using the library's default context.
+func NewDefaultReader() (*Reader, error) {
+	reader := C.c2pa_reader_new()
+	if reader == nil {
+		return nil, fmt.Errorf("failed to create default c2pa reader: %s", c2paError())
+	}
+	return &Reader{ptr: reader}, nil
+}
+
 func (r *Reader) Close() {
 	C.c2pa_free(unsafe.Pointer(r.ptr))
 }
@@ -81,6 +90,43 @@ func (r *Reader) ResourceToFile(uri string, path string) (int64, error) {
 	return r.ResourceToStream(uri, f)
 }
 
+// WithStream configures the reader from an asset stream. The reader must have
+// been created with NewReader and not yet configured with another input.
+func (r *Reader) WithStream(format string, file *os.File) error {
+	cformat := C.CString(format)
+	defer C.free(unsafe.Pointer(cformat))
+
+	stream, err := NewStream(file)
+	if err != nil {
+		return err
+	}
+	defer stream.Close()
+
+	next := C.c2pa_reader_with_stream(r.ptr, cformat, stream.ptr)
+	if next == nil {
+		return fmt.Errorf("failed to configure reader with stream: %s", c2paError())
+	}
+	r.ptr = next
+	return nil
+}
+
+// WithFile opens path, derives the format from its extension, and configures
+// the reader via WithStream.
+func (r *Reader) WithFile(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("failed to open file %s: %v", path, err)
+	}
+	defer file.Close()
+
+	format := filepath.Ext(path)
+	if len(format) > 0 {
+		format = format[1:]
+	}
+
+	return r.WithStream(format, file)
+}
+
 // WithManifestData configures the reader from an asset stream and a sidecar
 // manifest. The reader must have been created with NewReader and not yet
 // configured with WithStream/WithManifestData/WithFragment.
@@ -134,8 +180,7 @@ func (r *Reader) WithFragment(format string, asset *os.File, fragment *os.File) 
 }
 
 // NewReader creates a new Reader from the given Context. The reader must be
-// configured with a stream (e.g. via ReaderFromFile or by reusing the
-// Context with another helper) before it can be used.
+// configured with a stream before it can be used.
 func NewReader(ctx *Context) (*Reader, error) {
 	if ctx == nil || ctx.ptr == nil {
 		return nil, fmt.Errorf("context is nil")
@@ -143,39 +188,6 @@ func NewReader(ctx *Context) (*Reader, error) {
 	reader := C.c2pa_reader_from_context(ctx.ptr)
 	if reader == nil {
 		return nil, fmt.Errorf("failed to create c2pa reader: %s", c2paError())
-	}
-	return &Reader{ptr: reader}, nil
-}
-
-// ReaderFromFile creates a Reader by opening the given file path using the
-// supplied Context. Returns an error if the reader could not be created.
-func ReaderFromFile(ctx *Context, path string) (*Reader, error) {
-	if ctx == nil || ctx.ptr == nil {
-		return nil, fmt.Errorf("context is nil")
-	}
-	ext := filepath.Ext(path)
-	cformat := C.CString(ext[1:]) // skip the dot
-	defer C.free(unsafe.Pointer(cformat))
-
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file %s: %v", path, err)
-	}
-	defer file.Close()
-
-	stream, err := NewStream(file)
-	if err != nil {
-		return nil, err
-	}
-	defer stream.Close()
-
-	reader := C.c2pa_reader_from_context(ctx.ptr)
-	if reader == nil {
-		return nil, fmt.Errorf("failed to create c2pa reader for %s: %s", path, c2paError())
-	}
-	reader = C.c2pa_reader_with_stream(reader, cformat, stream.ptr)
-	if reader == nil {
-		return nil, fmt.Errorf("failed to configure c2pa reader for %s: %s", path, c2paError())
 	}
 	return &Reader{ptr: reader}, nil
 }

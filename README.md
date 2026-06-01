@@ -3,7 +3,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/duggaraju/c2pa-go/c2pa.svg)](https://pkg.go.dev/github.com/duggaraju/c2pa-go/c2pa)
 [![Go Report Card](https://goreportcard.com/badge/github.com/duggaraju/c2pa-go/c2pa)](https://goreportcard.com/report/github.com/duggaraju/c2pa-go/c2pa)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![c2pa-rs](https://img.shields.io/badge/c2pa--rs-v0.85.0-orange?logo=rust)](https://github.com/contentauth/c2pa-rs)
+[![c2pa-rs](https://img.shields.io/badge/c2pa--rs-v0.85.1-orange?logo=rust)](https://github.com/contentauth/c2pa-rs)
 
 Go bindings for the [c2pa-rs](https://github.com/contentauth/c2pa-rs) Content
 Authenticity SDK. This package exposes the C2PA reader, builder, signer and
@@ -88,7 +88,7 @@ There are two supported paths:
    From a project that just depends on this module (no checkout needed):
 
    ```sh
-   go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@v0.85.0 \
+    go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@latest \
        -dest ./c2pa-rs/target/release
    go build -tags=release ./...
    ```
@@ -127,25 +127,29 @@ below. The build is bundled with reqwest based resolver.
 ### Using prebuilt C libraries
 
 CI publishes `libc2pa_c` + `c2pa.h` for every supported OS/arch as GitHub
-Release assets (named `c2pa-c-libs-release-<os>-<arch>.tar.gz`). To consume
-the bindings without a Rust toolchain, use the `fetchlib` helper to download
-and extract the bundle for your host:
+Release assets (named `c2pa-c-libs-release-<os>-<arch>.tar.gz`). Each bundle
+contains the static archive plus the platform's shared library/import library
+when available. To consume the bindings without a Rust toolchain, use the
+`fetchlib` helper to download and extract the bundle for your host:
 
 ```sh
 # From a checkout of this repo:
 go run ./c2pa/cmd/fetchlib                              # default version, default dest
-go run ./c2pa/cmd/fetchlib -version c2pa/v0.85.0        # pin a specific release
+go run ./c2pa/cmd/fetchlib -version c2pa/vX.Y.Z         # pin a specific release
+go run ./c2pa/cmd/fetchlib -link dynamic -env           # print dynamic-linker CGO_*FLAGS
 go run ./c2pa/cmd/fetchlib -dest /tmp/c2pa-libs -env    # also print suggested CGO_*FLAGS
 
 # Or from an arbitrary working directory, without cloning the repo:
-go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@v0.85.0 \
+go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@latest \
     -dest ./c2pa-rs/target/release
 ```
 
 By default the helper writes to `c2pa-rs/target/release/` relative to the
-current directory, which matches the cgo flag files. After running it,
-`go build -tags=release ./c2pa` will link against the prebuilt library and
-you no longer need `cargo` or `rustup` installed.
+current directory, which matches the cgo flag files. `fetchlib` also accepts
+`-link static|dynamic`; `static` is the default and matches the Linux release
+cgo flags in this repo. After running it, `go build -tags=release ./c2pa`
+will link against the prebuilt library and you no longer need `cargo` or
+`rustup` installed.
 
 If you ship the library to a non-default location, pass `-dest` and either
 update the cgo flag files in [c2pa](c2pa) or override `CGO_CFLAGS`/`CGO_LDFLAGS`
@@ -204,11 +208,15 @@ func main() {
     }
     defer ctx.Close()
 
-    r, err := c2pa.ReaderFromFile(ctx, "signed.jpg")
+    r, err := c2pa.NewReader(ctx)
     if err != nil {
         log.Fatal(err)
     }
     defer r.Close()
+
+    if err := r.WithFile("signed.jpg"); err != nil {
+        log.Fatal(err)
+    }
 
     fmt.Println(r.Json())
     fmt.Println("embedded:", r.IsEmbedded())

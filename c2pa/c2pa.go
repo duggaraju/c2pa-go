@@ -7,8 +7,8 @@ import "C"
 
 import "unsafe"
 
-// C2paVersion returns the version string from the c2pa library.
-func C2paVersion() string {
+// Version returns the version string from the c2pa library.
+func Version() string {
 	cs := C.c2pa_version()
 	return C.GoString(cs)
 }

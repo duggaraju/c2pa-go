@@ -20,7 +20,7 @@ func main() {
 
 	// Support a global version flag as first argument: -v or --version
 	if os.Args[1] == "-v" || os.Args[1] == "--version" {
-		fmt.Printf("version: %s\n", c2pa.C2paVersion())
+		fmt.Printf("version: %s\n", c2pa.Version())
 		return
 	}
 
@@ -130,12 +130,17 @@ func handleRead(builder *c2pa.ContextBuilder, path string) {
 	}
 	defer ctx.Close()
 
-	r, err := c2pa.ReaderFromFile(ctx, path)
+	r, err := c2pa.NewReader(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to open reader: %v", err)
 		return
 	}
 	defer r.Close()
+
+	if err := r.WithFile(path); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to configure reader: %v", err)
+		return
+	}
 
 	json := r.Json()
 	fmt.Println(json)

@@ -30,7 +30,7 @@ The Go package links against prebuilt or locally built native artifacts under `c
   - `go generate -tags=release ./c2pa/...`
 - To use prebuilt release binaries, use `fetchlib`:
   - `go run ./c2pa/cmd/fetchlib`
-  - `go run ./c2pa/cmd/fetchlib -version c2pa/v0.85.0`
+  - `go run ./c2pa/cmd/fetchlib@latest`
 
 If the native library lives outside the default path, override `CGO_CFLAGS` and `CGO_LDFLAGS` rather than editing linker paths casually.
 
@@ -52,7 +52,7 @@ Keep these aligned when bumping versions:
 - `c2pa/cmd/fetchlib/main.go` `DefaultTag`
 - the Go module release tag
 
-Use module-scoped tags in this repository, for example `c2pa/v0.85.0`.
+Use module-scoped tags in this repository, for example `c2pa/vX.Y.Z`.
 Do not create a release tag from a dirty tree where the version bump is only in the working copy.
 
 ## Working Norms

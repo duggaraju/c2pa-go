@@ -11,7 +11,8 @@ import (
 // Context wraps an immutable C2paContext*. A Context is shareable and may be
 // used to create multiple Reader and Builder instances.
 type Context struct {
-	ptr *C.C2paContext
+	ptr      *C.C2paContext
+	cleanups []func()
 }
 
 // NewContext creates a new immutable Context with default settings.
@@ -30,6 +31,10 @@ func (c *Context) Close() {
 		C.c2pa_free(unsafe.Pointer(c.ptr))
 		c.ptr = nil
 	}
+	for _, cleanup := range c.cleanups {
+		cleanup()
+	}
+	c.cleanups = nil
 }
 
 // Cancel requests cancellation of any in-progress operation on this context.

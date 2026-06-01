@@ -20,10 +20,12 @@
 //
 // # Reading manifests
 //
-// Use [ReaderFromFile] (or [NewReader] with a stream) to inspect manifests
-// embedded in or accompanying an asset:
+// Use [NewReader] with [Reader.WithFile] to inspect manifests embedded in or
+// accompanying an asset:
 //
-//	r, err := c2pa.ReaderFromFile(ctx, "signed.jpg")
+//	r, err := c2pa.NewReader(ctx)
+//	if err != nil { ... }
+//	err = r.WithFile("signed.jpg")
 //	if err != nil { ... }
 //	defer r.Close()
 //	fmt.Println(r.Json())

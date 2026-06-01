@@ -67,6 +67,16 @@ WEAK C2paHttpResolver* create_http_resolver(uintptr_t context) {
 	return c2pa_http_resolver_create((const void*)context, (C2paHttpResolverCallback)http_resolver_callback);
 }
 
+extern CGO_EXPORT int progressCallback(uintptr_t context, C2paProgressPhase phase, uint32_t step, uint32_t total);
+
+WEAK int progress_callback(const void* context, C2paProgressPhase phase, uint32_t step, uint32_t total) {
+	return progressCallback((uintptr_t)context, phase, step, total);
+}
+
+WEAK int set_progress_callback(C2paContextBuilder* builder, uintptr_t context) {
+	return c2pa_context_builder_set_progress_callback(builder, (const void*)context, (ProgressCCallback)progress_callback);
+}
+
 #ifdef __cplusplus
 }
 #endif
