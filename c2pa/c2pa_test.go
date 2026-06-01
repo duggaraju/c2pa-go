@@ -7,13 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestC2paVersion(t *testing.T) {
-	v := C2paVersion()
+	v := Version()
 	assert.NotEmpty(t, v)
 	assert.Regexp(t, regexp.MustCompile(`^c2pa-c-ffi/\d+\.\d+\.\d+\s+c2pa-rs/\d+\.\d+\.\d+$`), v)
 }
@@ -30,37 +31,146 @@ func TestC2paError_AfterReaderFailure(t *testing.T) {
 	assert.NoError(t, ctxErr)
 	defer ctx.Close()
 
-	_, readerErr := ReaderFromFile(ctx, path)
+	r, err := NewReader(ctx)
+	assert.NoError(t, err)
+	defer r.Close()
+
+	readerErr := r.WithFile(path)
 	assert.Error(t, readerErr)
 
 	lastErr := c2paError()
 	assert.NotEmpty(t, lastErr)
 }
 
-func TestReaderFromFile_NotFound(t *testing.T) {
+func TestReaderWithFile_NotFound(t *testing.T) {
 	ctx, err := NewContext()
 	assert.NoError(t, err)
 	defer ctx.Close()
 
-	_, err = ReaderFromFile(ctx, "/nonexistent/file/path.jpg")
-	if err == nil {
-		t.Error("ReaderFromFile should fail for nonexistent file")
-	}
+	r, err := NewReader(ctx)
+	assert.NoError(t, err)
+	defer r.Close()
+
+	err = r.WithFile("/nonexistent/file/path.jpg")
+	assert.Error(t, err)
 }
 
-func TestReaderFromFile_Valid(t *testing.T) {
+func TestReaderWithFile_Valid(t *testing.T) {
 	ctx, ctxErr := NewContext()
 	assert.NoError(t, ctxErr)
 	defer ctx.Close()
 
-	// This test expects a valid test file at testdata/test.jpg
-	path := "../c2pa-rs/sdk/tests/fixtures/C.jpg"
-	r, err := ReaderFromFile(ctx, path)
-	assert.NotNil(t, r)
+	r, err := NewReader(ctx)
+	assert.NoError(t, err)
+	defer r.Close()
+
+	err = r.WithFile("../c2pa-rs/sdk/tests/fixtures/C.jpg")
+	assert.NoError(t, err)
 	assert.NotEmpty(t, r.Json())
-	assert.Nil(t, err)
-	if r != nil {
-		r.Close()
+}
+
+func TestNewDefaultReader_Valid(t *testing.T) {
+	r, err := NewDefaultReader()
+	assert.NoError(t, err)
+	defer r.Close()
+
+	err = r.WithFile("../c2pa-rs/sdk/tests/fixtures/C.jpg")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, r.Json())
+}
+
+func TestContextBuilderSetProgressCallback_Invoked(t *testing.T) {
+	manifestJSON, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/simple_manifest.json")
+	assert.NoError(t, err)
+
+	signCert, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pub")
+	assert.NoError(t, err)
+
+	privateKey, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pem")
+	assert.NoError(t, err)
+
+	ctxBuilder, err := NewContextBuilder()
+	assert.NoError(t, err)
+	defer ctxBuilder.Close()
+
+	var callbacks atomic.Int32
+	err = ctxBuilder.SetProgressCallback(ProgressFunc(func(phase ProgressPhase, step uint32, total uint32) bool {
+		callbacks.Add(1)
+		return true
+	}))
+	assert.NoError(t, err)
+
+	err = ctxBuilder.SetSignerInfo(SignerInfo{
+		Alg:        "ps256",
+		SignCert:   string(signCert),
+		PrivateKey: string(privateKey),
+	})
+	assert.NoError(t, err)
+
+	ctx, err := ctxBuilder.Build()
+	assert.NoError(t, err)
+	defer ctx.Close()
+
+	b, err := NewBuilder(ctx)
+	assert.NoError(t, err)
+	defer b.Close()
+
+	b, err = b.WithDefinition(string(manifestJSON))
+	assert.NoError(t, err)
+
+	input := "../c2pa-rs/sdk/tests/fixtures/C.jpg"
+	output := filepath.Join(t.TempDir(), "signed.jpg")
+
+	_, err = b.SignWithContext(input, output)
+	assert.NoError(t, err)
+	assert.Greater(t, callbacks.Load(), int32(0))
+}
+
+func TestSignerInfoReserveSize(t *testing.T) {
+	signCert, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pub")
+	assert.NoError(t, err)
+
+	privateKey, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pem")
+	assert.NoError(t, err)
+
+	signer, err := NewSignerFromInfo(SignerInfo{
+		Alg:        "ps256",
+		SignCert:   string(signCert),
+		PrivateKey: string(privateKey),
+	})
+	size, err := signer.ReserveSize()
+	assert.NoError(t, err)
+	assert.Greater(t, size, int64(0))
+}
+
+func TestNewIdentitySigner(t *testing.T) {
+	signCert, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pub")
+	assert.NoError(t, err)
+
+	privateKey, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pem")
+	assert.NoError(t, err)
+
+	claimSigner, err := NewSignerFromInfo(SignerInfo{
+		Alg:        "ps256",
+		SignCert:   string(signCert),
+		PrivateKey: string(privateKey),
+	})
+	assert.NoError(t, err)
+
+	identitySigner, err := NewSignerFromInfo(SignerInfo{
+		Alg:        "ps256",
+		SignCert:   string(signCert),
+		PrivateKey: string(privateKey),
+	})
+	assert.NoError(t, err)
+
+	signer, err := newIdentitySigner(claimSigner, identitySigner, []string{"c2pa.actions"}, []string{"author"})
+	assert.NoError(t, err)
+	if signer != nil {
+		defer signer.Close()
+		size, reserveErr := signer.ReserveSize()
+		assert.NoError(t, reserveErr)
+		assert.Greater(t, size, int64(0))
 	}
 }
 
@@ -107,10 +217,16 @@ func TestBuilderSignWithContext_Valid(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Greater(t, info.Size(), int64(0))
 
-	r, err := ReaderFromFile(ctx, output)
+	r, err := NewReader(ctx)
 	assert.NoError(t, err)
 	if r != nil {
 		defer r.Close()
+		f, openErr := os.Open(output)
+		assert.NoError(t, openErr)
+		if f != nil {
+			defer f.Close()
+			assert.NoError(t, r.WithStream("jpg", f))
+		}
 		assert.NotEmpty(t, r.Json())
 	}
 }

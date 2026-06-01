@@ -1,17 +1,17 @@
-// fetchlib downloads the prebuilt c2pa-rs static library bundle for the
-// current GOOS/GOARCH from a GitHub Release of duggaraju/c2pa-go and extracts
-// it into the location the cgo flags expect (../c2pa-rs/target/release by
-// default), so consumers can build the package without a Rust toolchain.
+// fetchlib downloads the prebuilt c2pa-rs library bundle for the current
+// GOOS/GOARCH from a GitHub Release of duggaraju/c2pa-go and extracts it into
+// the location the cgo flags expect (../c2pa-rs/target/release by default), so
+// consumers can build the package without a Rust toolchain.
 //
 // Typical use from a checkout of this repo:
 //
 //	go run ./c2pa/cmd/fetchlib                # default version, default dest
-//	go run ./c2pa/cmd/fetchlib -version c2pa/v0.85.0
 //	go run ./c2pa/cmd/fetchlib -dest /tmp/c2pa-libs
+//	go run ./c2pa/cmd/fetchlib -link dynamic -env
 //
 // Or directly without cloning:
 //
-//	go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@v0.85.0 \
+//	go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@latest \
 //	    -dest ./c2pa-rs/target/release
 package main
 
@@ -29,20 +29,33 @@ import (
 	"strings"
 )
 
-// DefaultTag is the release tag fetched when -version is not provided. It is
+// LatestTag is the release tag fetched when -version is not provided. It is
 // updated together with the matching c2pa-rs submodule pin and module tag.
-const DefaultTag = "c2pa/v0.85.0"
+const LatestTag = "latest"
 
 // repoSlug is the GitHub repository hosting the release binaries.
 const repoSlug = "duggaraju/c2pa-go"
 
+type linkMode string
+
+const (
+	linkModeStatic  linkMode = "static"
+	linkModeDynamic linkMode = "dynamic"
+)
+
 func main() {
-	tag := flag.String("version", DefaultTag, "release tag to fetch (e.g. c2pa/v0.85.0)")
+	tag := flag.String("version", LatestTag, "release tag to fetch (e.g. c2pa/vX.Y.Z)")
 	dest := flag.String("dest", "c2pa-rs/target/release", "destination directory (created if missing)")
 	osName := flag.String("os", runtime.GOOS, "target operating system")
 	arch := flag.String("arch", runtime.GOARCH, "target architecture")
+	link := flag.String("link", string(linkModeStatic), "link mode for suggested CGO env vars: static or dynamic")
 	envOnly := flag.Bool("env", false, "do not download; print suggested CGO env vars for an existing -dest and exit")
 	flag.Parse()
+
+	mode, err := parseLinkMode(*link)
+	if err != nil {
+		fail(err)
+	}
 
 	abs, err := filepath.Abs(*dest)
 	if err != nil {
@@ -50,13 +63,12 @@ func main() {
 	}
 
 	if *envOnly {
-		printEnv(abs, *osName)
+		printEnv(abs, *osName, mode)
 		return
 	}
 
-	asset := fmt.Sprintf("c2pa-c-libs-release-%s-%s.tar.gz", *osName, *arch)
-	dlURL := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s",
-		repoSlug, url.PathEscape(*tag), asset)
+	asset := releaseAssetName(*osName, *arch)
+	dlURL := releaseDownloadURL(repoSlug, *tag, asset)
 
 	if err := os.MkdirAll(abs, 0o755); err != nil {
 		fail(err)
@@ -72,8 +84,34 @@ func main() {
 	fmt.Fprintf(os.Stderr, "  1) Use the default cgo flags: ensure -dest matches\n")
 	fmt.Fprintf(os.Stderr, "     <repo>/c2pa-rs/target/release relative to the c2pa\n")
 	fmt.Fprintf(os.Stderr, "     package source, then `go build -tags=release ./...`\n")
-	fmt.Fprintf(os.Stderr, "  2) Or set CGO_*FLAGS yourself, e.g.:\n\n")
-	printEnv(abs, *osName)
+	fmt.Fprintf(os.Stderr, "  2) Or set CGO_*FLAGS yourself with -link=%s, e.g.:\n\n", mode)
+	printEnv(abs, *osName, mode)
+}
+
+func parseLinkMode(value string) (linkMode, error) {
+	switch linkMode(strings.ToLower(strings.TrimSpace(value))) {
+	case linkModeStatic:
+		return linkModeStatic, nil
+	case linkModeDynamic:
+		return linkModeDynamic, nil
+	default:
+		return "", fmt.Errorf("unsupported -link value %q (want static or dynamic)", value)
+	}
+}
+
+func releaseAssetName(osName, arch string) string {
+	return fmt.Sprintf("c2pa-c-libs-release-%s-%s.tar.gz", osName, arch)
+}
+
+func releaseDownloadURL(repoSlug, tag, asset string) string {
+	tag = strings.TrimSpace(tag)
+	if strings.EqualFold(tag, LatestTag) {
+		return fmt.Sprintf("https://github.com/%s/releases/latest/download/%s",
+			repoSlug, asset)
+	}
+
+	return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s",
+		repoSlug, url.PathEscape(tag), asset)
 }
 
 func downloadAndExtract(dlURL, dest string) error {
@@ -141,18 +179,49 @@ func downloadAndExtract(dlURL, dest string) error {
 	return nil
 }
 
-func printEnv(dest, osName string) {
+func printEnv(dest, osName string, mode linkMode) {
+	for _, line := range envLines(dest, osName, mode) {
+		fmt.Println(line)
+	}
+}
+
+func envLines(dest, osName string, mode linkMode) []string {
+	lines := []string{fmt.Sprintf("export CGO_CFLAGS=\"-I%s\"", dest)}
+
 	switch osName {
 	case "windows":
 		// MSYS2 / mingw style; users may need to translate paths for cmd.exe.
-		fmt.Printf("export CGO_CFLAGS=\"-I%s\"\n", dest)
-		fmt.Printf("export CGO_LDFLAGS=\"-L%s -lc2pa_c -lws2_32 -lbcrypt -luserenv -lntdll\"\n", dest)
+		if mode == linkModeDynamic {
+			lines = append(lines,
+				fmt.Sprintf("export CGO_LDFLAGS=\"-L%s -l:c2pa_c.lib -lws2_32 -luserenv -ladvapi32 -lncrypt -lcrypt32 -lbcrypt -lsecur32 -lntdll -lkernel32 -lole32 -loleaut32 -lpsapi -liphlpapi\"", dest),
+				fmt.Sprintf("export PATH=\"%s:$PATH\"", dest),
+			)
+			return lines
+		}
+
+		return append(lines,
+			fmt.Sprintf("export CGO_LDFLAGS=\"-L%s -l:libc2pa_c.a -lws2_32 -luserenv -ladvapi32 -lncrypt -lcrypt32 -lbcrypt -lsecur32 -lntdll -lkernel32 -lole32 -loleaut32 -lpsapi -liphlpapi\"", dest),
+		)
 	case "darwin":
-		fmt.Printf("export CGO_CFLAGS=\"-I%s\"\n", dest)
-		fmt.Printf("export CGO_LDFLAGS=\"-L%s -lc2pa_c -framework Security -framework CoreFoundation\"\n", dest)
+		if mode == linkModeDynamic {
+			return append(lines,
+				fmt.Sprintf("export CGO_LDFLAGS=\"-L%s -Wl,-rpath,%s -lc2pa_c -framework Security -framework CoreFoundation -framework SystemConfiguration -lresolv -ldl -lm\"", dest, dest),
+			)
+		}
+
+		return append(lines,
+			fmt.Sprintf("export CGO_LDFLAGS=\"%s/libc2pa_c.a -framework Security -framework CoreFoundation -framework SystemConfiguration -lresolv -ldl -lm\"", dest),
+		)
 	default:
-		fmt.Printf("export CGO_CFLAGS=\"-I%s\"\n", dest)
-		fmt.Printf("export CGO_LDFLAGS=\"-L%s -lc2pa_c -lm -ldl -lpthread\"\n", dest)
+		if mode == linkModeDynamic {
+			return append(lines,
+				fmt.Sprintf("export CGO_LDFLAGS=\"-L%s -Wl,-rpath,%s -Wl,-Bdynamic -lc2pa_c -lm -ldl -lpthread\"", dest, dest),
+			)
+		}
+
+		return append(lines,
+			fmt.Sprintf("export CGO_LDFLAGS=\"-L%s -Wl,-Bstatic -lc2pa_c -Wl,-Bdynamic -lm -ldl -lpthread\"", dest),
+		)
 	}
 }
 
