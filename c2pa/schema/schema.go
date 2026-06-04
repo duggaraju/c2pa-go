@@ -1553,9 +1553,8 @@ type Verify struct {
 	// Whether to verify the manifest after signing in the [`Builder`].
 	//
 	// The default value is false.
-	// There is a known bug related to this setting:
-	// [#1875](https://github.com/contentauth/c2pa-rs/issues/1875).
-	// When the bug is fixed, the default value should be true.
+	//
+	// In the future, this setting will default to true.
 	//
 	// <div class="warning">
 	// Disabling validation can improve signing performance, BUT it carries the risk of signing
@@ -1565,6 +1564,12 @@ type Verify struct {
 	//
 	// [`Builder`]: crate::Builder
 	VerifyAfterSign *bool `json:"verify_after_sign,omitempty"`
+	// Whether to include asset hash validation when verifying after signing.
+	//
+	// The default value is false.
+	//
+	// Has no effect when [`Verify::verify_after_sign`] is false.
+	VerifyAfterSignHash *bool `json:"verify_after_sign_hash,omitempty"`
 	// Whether to verify the timestamp certificates against the trust lists specified in
 	// [`Trust`].
 	//
