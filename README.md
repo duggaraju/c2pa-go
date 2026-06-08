@@ -3,7 +3,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/duggaraju/c2pa-go/c2pa.svg)](https://pkg.go.dev/github.com/duggaraju/c2pa-go/c2pa)
 [![Go Report Card](https://goreportcard.com/badge/github.com/duggaraju/c2pa-go/c2pa)](https://goreportcard.com/report/github.com/duggaraju/c2pa-go/c2pa)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![c2pa-rs](https://img.shields.io/badge/c2pa--rs-v0.85.2-orange?logo=rust)](https://github.com/contentauth/c2pa-rs)
+[![c2pa-rs](https://img.shields.io/badge/c2pa--rs-v0.86.0-orange?logo=rust)](https://github.com/contentauth/c2pa-rs)
 
 Go bindings for the [c2pa-rs](https://github.com/contentauth/c2pa-rs) Content
 Authenticity SDK. This package exposes the C2PA reader, builder, signer and
@@ -487,6 +487,16 @@ go build .
 Both subcommands accept `-s settings.toml` to load a settings file; see
 [example/settings.toml](example/settings.toml) for a working sample with a
 custom trust list and verification policy.
+
+To build against the prebuilt release native library instead of compiling
+`c2pa-rs` from source, fetch the library first and then build with the
+`release` tag:
+
+```sh
+go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib
+cd example
+go build -tags=release .
+```
 
 ## License
 
