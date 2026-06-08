@@ -181,6 +181,57 @@ func newIdentitySigner(c2paSigner *NativeSigner, identitySigner *NativeSigner, r
 	return &NativeSigner{ptr: ptr, handles: handles}, nil
 }
 
+// ed25519Signer is a Signer that produces Ed25519 signatures via the native
+// c2pa_ed25519_sign helper. Use NewEd25519Signer to construct one.
+type ed25519Signer struct {
+	privateKey   string
+	certificates string
+	timestampUrl string
+}
+
+// ed25519SignatureLen is the fixed size of an Ed25519 signature in bytes.
+const ed25519SignatureLen = 64
+
+// NewEd25519Signer returns a Signer that signs with the native c2pa Ed25519
+// helper. privateKey is a PEM-encoded Ed25519 private key, certificates is the
+// matching PEM certificate chain, and timestampUrl is an optional RFC 3161
+// timestamp authority URL (pass "" to disable timestamping).
+func NewEd25519Signer(privateKey, certificates, timestampUrl string) Signer {
+	var s Signer = &ed25519Signer{
+		privateKey:   privateKey,
+		certificates: certificates,
+		timestampUrl: timestampUrl,
+	}
+	return s
+}
+
+func (s *ed25519Signer) Sign(input []byte, output []byte) (int, error) {
+	if len(output) < ed25519SignatureLen {
+		return 0, fmt.Errorf("output buffer too small: need %d, got %d", ed25519SignatureLen, len(output))
+	}
+	cKey := C.CString(s.privateKey)
+	defer C.free(unsafe.Pointer(cKey))
+
+	var inPtr *C.uchar
+	if len(input) > 0 {
+		inPtr = (*C.uchar)(unsafe.Pointer(&input[0]))
+	}
+
+	sig := C.c2pa_ed25519_sign(inPtr, C.uintptr_t(len(input)), cKey)
+	if sig == nil {
+		return 0, fmt.Errorf("ed25519 sign failed: %s", c2paError())
+	}
+	defer C.c2pa_free(unsafe.Pointer(sig))
+
+	src := unsafe.Slice((*byte)(unsafe.Pointer(sig)), ed25519SignatureLen)
+	copy(output[:ed25519SignatureLen], src)
+	return ed25519SignatureLen, nil
+}
+
+func (s *ed25519Signer) Alg() SigningAlg      { return C2paSigningAlgEd25519 }
+func (s *ed25519Signer) TimeStampUrl() string { return s.timestampUrl }
+func (s *ed25519Signer) Certificates() string { return s.certificates }
+
 func cStringArray(values []string) (**C.char, func()) {
 	if len(values) == 0 {
 		return nil, func() {}

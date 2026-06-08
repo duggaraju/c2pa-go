@@ -13,6 +13,12 @@ func Version() string {
 	return C.GoString(cs)
 }
 
+func SetError(error string) {
+	cstr := C.CString(error)
+	defer C.free(unsafe.Pointer(cstr))
+	C.c2pa_error_set_last(cstr)
+}
+
 func c2paError() string {
 	cs := C.c2pa_error()
 	defer C.c2pa_free(unsafe.Pointer(cs))
