@@ -40,7 +40,8 @@ c2pa/cmd/fetchlib/    Helper CLI that downloads the prebuilt libc2pa_c
                       tarball for the current OS/arch from a GitHub Release
                       and extracts it into c2pa-rs/target/release (see
                       "Using prebuilt C libraries" below)
-example/              Sample CLI that reads and signs assets
+c2pa-cli/             Sample CLI that reads and signs assets
+                      (module github.com/duggaraju/c2pa-go/c2pa-cli)
 c2pa-rs/              Pinned upstream submodule built into the c2pa_c static lib
 ```
 
@@ -82,7 +83,7 @@ There are two supported paths:
    git submodule update --init --recursive
    go run ./c2pa/cmd/fetchlib            # populates c2pa-rs/target/release/
    go build -tags=release ./c2pa
-   (cd example && go build -tags=release .)
+   (cd c2pa-cli && go build -tags=release .)
    ```
 
    From a project that just depends on this module (no checkout needed):
@@ -105,10 +106,10 @@ There are two supported paths:
    # Or build the release flavor into c2pa-rs/target/release.
    go generate -tags=release ./c2pa/...
 
-   # Build the bindings and the example CLI.
+   # Build the bindings and the sample CLI.
    go build ./c2pa                       # debug
    go build -tags=release ./c2pa         # release
-   (cd example && go build .)
+   (cd c2pa-cli && go build .)
    ```
 
 The `go:generate` directives in [c2pa/generate.go](c2pa/generate.go),
@@ -466,18 +467,44 @@ schema fields are pointers (so the JSON `omitempty` semantics are preserved):
 func ptr[T any](v T) *T { return &v }
 ```
 
-## Example CLI
+## Sample CLI
 
-The [example](example) directory contains a small CLI demonstrating `read` and
-`sign`:
+The [c2pa-cli](c2pa-cli) directory contains a small CLI demonstrating `read`
+and `sign`. It is published as its own module,
+`github.com/duggaraju/c2pa-go/c2pa-cli`, so it can be installed directly:
 
 ```sh
-cd example
-go build .
+go install github.com/duggaraju/c2pa-go/c2pa-cli@latest
+```
 
-./example -v
-./example read -i ../c2pa-rs/sdk/tests/fixtures/C.jpg
-./example sign \
+`go install` only links if a prebuilt `libc2pa_c` is reachable by the linker.
+The easiest way to set that up — without a Rust toolchain or even a checkout
+of this repo — is to use the `fetchlib` helper and the CGO env vars it prints:
+
+```sh
+# 1. Download the prebuilt c2pa_c library bundle to a directory of your choice.
+go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@latest -dest "$PWD/libs"
+
+# 2. Export the CGO flags fetchlib prints. -env prints them without re-downloading.
+eval "$(go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@latest \
+    -dest "$PWD/libs" -env)"
+
+# 3. Install the CLI.
+go install github.com/duggaraju/c2pa-go/c2pa-cli@latest
+c2pa-cli -v
+```
+
+From a checkout of this repo the default cgo flags already point at
+`c2pa-rs/target/release`, so the build is a two-step recipe:
+
+```sh
+go run ./c2pa/cmd/fetchlib            # populates c2pa-rs/target/release/
+cd c2pa-cli
+go build -tags=release .
+
+./c2pa-cli -v
+./c2pa-cli read -i ../c2pa-rs/sdk/tests/fixtures/C.jpg
+./c2pa-cli sign \
     -i ../c2pa-rs/sdk/tests/fixtures/C.jpg \
     -o /tmp/signed.jpg \
     -c ../c2pa-rs/sdk/tests/fixtures/certs/ps256.pub \
@@ -485,18 +512,8 @@ go build .
 ```
 
 Both subcommands accept `-s settings.toml` to load a settings file; see
-[example/settings.toml](example/settings.toml) for a working sample with a
+[c2pa-cli/settings.toml](c2pa-cli/settings.toml) for a working sample with a
 custom trust list and verification policy.
-
-To build against the prebuilt release native library instead of compiling
-`c2pa-rs` from source, fetch the library first and then build with the
-`release` tag:
-
-```sh
-go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib
-cd example
-go build -tags=release .
-```
 
 ## License
 

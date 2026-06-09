@@ -1,3 +1,48 @@
+// Command c2pa-cli is a small command-line tool for reading and signing
+// C2PA Content Credentials, built on the c2pa-go bindings for the c2pa-rs
+// SDK. It serves both as a usage example for the
+// github.com/duggaraju/c2pa-go/c2pa package and as a minimal alternative to
+// the upstream c2patool.
+//
+// Keywords: C2PA, c2pa, c2pa-cli, c2pa-go, c2pa-rs, c2patool, Content
+// Credentials, Content Authenticity, Content Integrity, content provenance,
+// manifest signing.
+//
+// # Install
+//
+// Install the latest release directly with go install. cgo must be enabled
+// and the c2pa_c native library must be reachable by the linker. The
+// fetchlib helper in this module downloads a prebuilt c2pa_c bundle and
+// prints the matching CGO_CFLAGS / CGO_LDFLAGS:
+//
+//	go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@latest -dest "$PWD/libs"
+//	eval "$(go run github.com/duggaraju/c2pa-go/c2pa/cmd/fetchlib@latest -dest "$PWD/libs" -env)"
+//	go install github.com/duggaraju/c2pa-go/c2pa-cli@latest
+//
+// # Usage
+//
+// Print the c2pa-rs / c2pa_c_ffi version:
+//
+//	c2pa-cli -v
+//
+// Read and print the manifest store for an asset:
+//
+//	c2pa-cli read -i signed.jpg
+//
+// Sign an asset using a PEM certificate chain and private key:
+//
+//	c2pa-cli sign \
+//	    -i input.jpg \
+//	    -o signed.jpg \
+//	    -c cert.pub \
+//	    -k key.pem \
+//	    -m manifest.json
+//
+// Both subcommands accept -s settings.toml to load a settings file (trust
+// list, verification policy, builder defaults, etc.). See the project
+// README for the full options reference:
+//
+// https://github.com/duggaraju/c2pa-go#sample-cli
 package main
 
 import (
