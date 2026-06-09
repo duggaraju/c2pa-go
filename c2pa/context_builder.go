@@ -1,8 +1,5 @@
 package c2pa
 
-// #include "c2pa_helper.h"
-import "C"
-
 import (
 	"fmt"
 	"runtime/cgo"
@@ -11,30 +8,9 @@ import (
 
 // ContextBuilder wraps a C2paContextBuilder*. It is consumed by Build().
 type ContextBuilder struct {
-	ptr      *C.C2paContextBuilder
+	ptr      unsafe.Pointer
 	cleanups []func()
 }
-
-// ProgressPhase mirrors C2paProgressPhase and identifies the operation stage
-// reported by a progress callback.
-type ProgressPhase C.C2paProgressPhase
-
-const (
-	ProgressReading                ProgressPhase = C.Reading
-	ProgressVerifyingManifest      ProgressPhase = C.VerifyingManifest
-	ProgressVerifyingSignature     ProgressPhase = C.VerifyingSignature
-	ProgressVerifyingIngredient    ProgressPhase = C.VerifyingIngredient
-	ProgressVerifyingAssetHash     ProgressPhase = C.VerifyingAssetHash
-	ProgressAddingIngredient       ProgressPhase = C.AddingIngredient
-	ProgressThumbnail              ProgressPhase = C.Thumbnail
-	ProgressHashing                ProgressPhase = C.Hashing
-	ProgressSigning                ProgressPhase = C.Signing
-	ProgressEmbedding              ProgressPhase = C.Embedding
-	ProgressFetchingRemoteManifest ProgressPhase = C.FetchingRemoteManifest
-	ProgressWriting                ProgressPhase = C.Writing
-	ProgressFetchingOCSP           ProgressPhase = C.FetchingOCSP
-	ProgressFetchingTimestamp      ProgressPhase = C.FetchingTimestamp
-)
 
 // ProgressCallback receives progress updates from the native SDK. Return true
 // to continue or false to request cancellation.
@@ -53,9 +29,18 @@ func (f ProgressFunc) Progress(phase ProgressPhase, step uint32, total uint32) b
 	return f(phase, step, total)
 }
 
+// goProgressCallback is invoked from the cgo progressCallback in native.go.
+func goProgressCallback(handle uintptr, phase ProgressPhase, step, total uint32) bool {
+	callback, ok := cgo.Handle(handle).Value().(ProgressCallback)
+	if !ok || callback == nil {
+		return false
+	}
+	return callback.Progress(phase, step, total)
+}
+
 // NewContextBuilder creates a new context builder with default settings.
 func NewContextBuilder() (*ContextBuilder, error) {
-	ptr := C.c2pa_context_builder_new()
+	ptr := c2paContextBuilderNew()
 	if ptr == nil {
 		return nil, fmt.Errorf("failed to create c2pa context builder: %s", c2paError())
 	}
@@ -65,7 +50,7 @@ func NewContextBuilder() (*ContextBuilder, error) {
 // Close releases the underlying builder if it has not been consumed by Build.
 func (b *ContextBuilder) Close() {
 	if b.ptr != nil {
-		C.c2pa_free(unsafe.Pointer(b.ptr))
+		c2paFree(b.ptr)
 		b.ptr = nil
 	}
 	for _, cleanup := range b.cleanups {
@@ -89,7 +74,7 @@ func (b *ContextBuilder) SetSigner(signer Signer) error {
 	if err != nil {
 		return err
 	}
-	if rc := C.c2pa_context_builder_set_signer(b.ptr, adapter.ptr); rc != 0 {
+	if rc := c2paContextBuilderSetSigner(b.ptr, adapter.ptr); rc != 0 {
 		adapter.Close()
 		return fmt.Errorf("failed to set signer on context builder: %s", c2paError())
 	}
@@ -111,7 +96,7 @@ func (b *ContextBuilder) SetSignerInfo(info SignerInfo) error {
 		return fmt.Errorf("failed to create signer from info: %s", c2paError())
 	}
 
-	if rc := C.c2pa_context_builder_set_signer(b.ptr, cSigner.ptr); rc != 0 {
+	if rc := c2paContextBuilderSetSigner(b.ptr, cSigner.ptr); rc != 0 {
 		cSigner.Close()
 		return fmt.Errorf("failed to set signer on context builder: %s", c2paError())
 	}
@@ -127,7 +112,7 @@ func (b *ContextBuilder) SetSettings(settings *Settings) error {
 	if settings == nil || settings.ptr == nil {
 		return fmt.Errorf("settings is nil")
 	}
-	if rc := C.c2pa_context_builder_set_settings(b.ptr, settings.ptr); rc != 0 {
+	if rc := c2paContextBuilderSetSettings(b.ptr, settings.ptr); rc != 0 {
 		return fmt.Errorf("failed to set settings on context builder: %s", c2paError())
 	}
 	return nil
@@ -150,7 +135,7 @@ func (b *ContextBuilder) SetHttpResolver(resolver *HttpResolverAdapter) error {
 	if resolver == nil || resolver.ptr == nil {
 		return fmt.Errorf("http resolver is nil")
 	}
-	if rc := C.c2pa_context_builder_set_http_resolver(b.ptr, resolver.ptr); rc != 0 {
+	if rc := c2paContextBuilderSetHttpResolver(b.ptr, resolver.ptr); rc != 0 {
 		return fmt.Errorf("failed to set http resolver on context builder: %s", c2paError())
 	}
 	b.takeHandle(resolver.handle)
@@ -158,19 +143,6 @@ func (b *ContextBuilder) SetHttpResolver(resolver *HttpResolverAdapter) error {
 	// The builder consumed the C resolver pointer; prevent double free.
 	resolver.ptr = nil
 	return nil
-}
-
-//export progressCallback
-func progressCallback(context C.uintptr_t, phase C.C2paProgressPhase, step C.uint32_t, total C.uint32_t) C.int {
-	handle := cgo.Handle(context)
-	callback, ok := handle.Value().(ProgressCallback)
-	if !ok || callback == nil {
-		return C.int(0)
-	}
-	if callback.Progress(ProgressPhase(phase), uint32(step), uint32(total)) {
-		return C.int(1)
-	}
-	return C.int(0)
 }
 
 // SetProgressCallback attaches a Go progress callback to the context builder.
@@ -184,7 +156,7 @@ func (b *ContextBuilder) SetProgressCallback(callback ProgressCallback) error {
 		return fmt.Errorf("progress callback is nil")
 	}
 	handle := cgo.NewHandle(callback)
-	if rc := C.set_progress_callback(b.ptr, C.uintptr_t(handle)); rc != 0 {
+	if rc := c2paContextBuilderSetProgressCallback(b.ptr, uintptr(handle)); rc != 0 {
 		handle.Delete()
 		return fmt.Errorf("failed to set progress callback on context builder: %s", c2paError())
 	}
@@ -197,7 +169,7 @@ func (b *ContextBuilder) Build() (*Context, error) {
 	if b.ptr == nil {
 		return nil, fmt.Errorf("context builder is closed")
 	}
-	ptr := C.c2pa_context_builder_build(b.ptr)
+	ptr := c2paContextBuilderBuild(b.ptr)
 	// The builder is consumed regardless of success.
 	b.ptr = nil
 	if ptr == nil {

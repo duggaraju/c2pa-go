@@ -1,8 +1,5 @@
 package c2pa
 
-// #include "c2pa_helper.h"
-import "C"
-
 import (
 	"fmt"
 	"io"
@@ -13,72 +10,59 @@ import (
 
 type Stream struct {
 	file   *os.File
-	ptr    *C.C2paStream
+	ptr    unsafe.Pointer
 	handle cgo.Handle
 }
 
-//export streamRead
-func streamRead(context C.uintptr_t, buffer *C.uint8_t, size C.intptr_t) C.intptr_t {
-	handle := cgo.Handle(context)
-	stream := handle.Value().(Stream)
-	slice := unsafe.Slice((*byte)(buffer), (int)(size))
-	n, err := stream.file.Read(slice)
+// goStreamRead is invoked from the cgo streamRead callback in native.go.
+// In a build without cgo it is unreachable but must remain compilable.
+func goStreamRead(handle uintptr, buf []byte) int {
+	stream := cgo.Handle(handle).Value().(Stream)
+	n, err := stream.file.Read(buf)
 	if err != nil {
 		if err == io.EOF {
-			return C.intptr_t(0) // EOF is not an error for Read
+			return 0
 		}
-		return C.intptr_t(-1)
+		return -1
 	}
-	return C.intptr_t(n)
+	return n
 }
 
-//export streamSeek
-func streamSeek(context C.uintptr_t, offset C.intptr_t, mode C.C2paSeekMode) C.intptr_t {
-	handle := cgo.Handle(context)
-	stream := handle.Value().(Stream)
-	n, err := stream.file.Seek(int64(offset), int(mode))
+func goStreamSeek(handle uintptr, offset int64, mode int) int64 {
+	stream := cgo.Handle(handle).Value().(Stream)
+	n, err := stream.file.Seek(offset, mode)
 	if err != nil {
-		return C.intptr_t(-1)
+		return -1
 	}
-	return C.intptr_t(n)
+	return n
 }
 
-//export streamWrite
-func streamWrite(context C.uintptr_t, buffer *C.uint8_t, size C.intptr_t) C.intptr_t {
-	handle := cgo.Handle(context)
-	stream := handle.Value().(Stream)
-	slice := unsafe.Slice((*byte)(buffer), (int)(size))
-	n, err := stream.file.Write(slice)
-	if err != nil {
-		return C.intptr_t(n)
-	}
-	return C.intptr_t(n)
+func goStreamWrite(handle uintptr, buf []byte) int {
+	stream := cgo.Handle(handle).Value().(Stream)
+	n, _ := stream.file.Write(buf)
+	return n
 }
 
-//export streamFlush
-func streamFlush(context C.uintptr_t) C.intptr_t {
-	handle := cgo.Handle(context)
-	stream := handle.Value().(Stream)
-	err := stream.file.Sync()
-	if err == nil {
-		return C.intptr_t(0)
-	} else {
-		return C.intptr_t(-1)
+func goStreamFlush(handle uintptr) int {
+	stream := cgo.Handle(handle).Value().(Stream)
+	if err := stream.file.Sync(); err != nil {
+		return -1
 	}
+	return 0
 }
 
 // NewStream creates a new Stream.
 func NewStream(file *os.File) (*Stream, error) {
-
 	stream := Stream{
 		ptr:  nil,
 		file: file,
 	}
 
 	stream.handle = cgo.NewHandle(stream)
-	stream.ptr = C.create_stream(C.uintptr_t(stream.handle))
+	stream.ptr = c2paCreateStream(uintptr(stream.handle))
 	if stream.ptr == nil {
 		err := c2paError()
+		stream.handle.Delete()
 		return nil, fmt.Errorf("failed to create stream: %s", err)
 	}
 
@@ -86,6 +70,12 @@ func NewStream(file *os.File) (*Stream, error) {
 }
 
 func (s *Stream) Close() {
-	C.c2pa_release_stream(s.ptr)
-	s.handle.Delete()
+	if s.ptr != nil {
+		c2paReleaseStream(s.ptr)
+		s.ptr = nil
+	}
+	if s.handle != 0 {
+		s.handle.Delete()
+		s.handle = 0
+	}
 }

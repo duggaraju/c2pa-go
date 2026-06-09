@@ -1,5 +1,5 @@
-//go:build linux && release
-// +build linux,release
+//go:build cgo && linux && release
+// +build cgo,linux,release
 
 package c2pa
 

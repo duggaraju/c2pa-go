@@ -1,10 +1,5 @@
 package c2pa
 
-// #include <stdlib.h>
-// #include <string.h>
-// #include "c2pa_helper.h"
-import "C"
-
 import (
 	"bytes"
 	"fmt"
@@ -33,7 +28,7 @@ type HttpResolver interface {
 // Close is called.
 type HttpResolverAdapter struct {
 	resolver HttpResolver
-	ptr      *C.C2paHttpResolver
+	ptr      unsafe.Pointer
 	handle   cgo.Handle
 }
 
@@ -61,7 +56,7 @@ func NewHttpResolver(resolver HttpResolver) (*HttpResolverAdapter, error) {
 	}
 	a := &HttpResolverAdapter{resolver: resolver}
 	a.handle = cgo.NewHandle(a)
-	a.ptr = C.create_http_resolver(C.uintptr_t(a.handle))
+	a.ptr = c2paHttpResolverCreate(uintptr(a.handle))
 	if a.ptr == nil {
 		a.handle.Delete()
 		return nil, fmt.Errorf("failed to create c2pa http resolver: %s", c2paError())
@@ -77,7 +72,7 @@ func (a *HttpResolverAdapter) Close() {
 		return
 	}
 	if a.ptr != nil {
-		C.c2pa_free(unsafe.Pointer(a.ptr))
+		c2paFree(a.ptr)
 		a.ptr = nil
 	}
 	if a.handle != 0 {
@@ -109,72 +104,34 @@ func parseHeaders(raw string) http.Header {
 	return h
 }
 
-//export httpResolverCallback
-func httpResolverCallback(context C.uintptr_t, request *C.C2paHttpRequest, response *C.C2paHttpResponse) C.int {
-	if request == nil || response == nil {
-		setLastError("InvalidParameter: nil http request or response")
-		return -1
-	}
-	adapter, ok := cgo.Handle(context).Value().(*HttpResolverAdapter)
+// goHttpResolve is invoked from the cgo httpResolverCallback in native.go.
+// Returns (status, body, errMsg); errMsg is non-empty on failure.
+func goHttpResolve(handle uintptr, url, method, headers string, body []byte) (int, []byte, string) {
+	adapter, ok := cgo.Handle(handle).Value().(*HttpResolverAdapter)
 	if !ok || adapter == nil || adapter.resolver == nil {
-		setLastError("Other: http resolver handle is invalid")
-		return -1
+		return 0, nil, "Other: http resolver handle is invalid"
 	}
 
-	url := C.GoString(request.url)
-	method := C.GoString(request.method)
-	headers := ""
-	if request.headers != nil {
-		headers = C.GoString(request.headers)
-	}
 	var bodyReader io.Reader
-	if request.body != nil && request.body_len > 0 {
-		body := C.GoBytes(unsafe.Pointer(request.body), C.int(request.body_len))
+	if len(body) > 0 {
 		bodyReader = bytes.NewReader(body)
 	}
 
 	req, err := http.NewRequest(method, url, bodyReader)
 	if err != nil {
-		setLastError(fmt.Sprintf("Other: %s", err))
-		return -1
+		return 0, nil, fmt.Sprintf("Other: %s", err)
 	}
 	req.Header = parseHeaders(headers)
 
 	resp, err := adapter.resolver.Resolve(req)
 	if err != nil {
-		setLastError(fmt.Sprintf("Other: %s", err))
-		return -1
+		return 0, nil, fmt.Sprintf("Other: %s", err)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		setLastError(fmt.Sprintf("Other: %s", err))
-		return -1
+		return 0, nil, fmt.Sprintf("Other: %s", err)
 	}
-
-	response.status = C.int32_t(resp.StatusCode)
-	response.body_len = C.uintptr_t(len(body))
-	if len(body) > 0 {
-		// The Rust side takes ownership of `body` and frees it with
-		// libc::free, so we must allocate via the C allocator.
-		buf := C.malloc(C.size_t(len(body)))
-		if buf == nil {
-			setLastError("Other: malloc failed for http response body")
-			return -1
-		}
-		C.memcpy(buf, unsafe.Pointer(&body[0]), C.size_t(len(body)))
-		response.body = (*C.uchar)(buf)
-	} else {
-		response.body = nil
-	}
-	return 0
-}
-
-// setLastError forwards a Go-side error message to the Rust side via
-// c2pa_error_set_last so that it surfaces through C2paError().
-func setLastError(msg string) {
-	cs := C.CString(msg)
-	defer C.free(unsafe.Pointer(cs))
-	C.c2pa_error_set_last(cs)
+	return resp.StatusCode, respBody, ""
 }

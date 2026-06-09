@@ -1,8 +1,5 @@
 package c2pa
 
-// #include <c2pa.h>
-import "C"
-
 import (
 	"encoding/json"
 	"fmt"
@@ -14,12 +11,12 @@ import (
 // Settings wraps a C2paSettings*. It is used to configure a ContextBuilder via
 // ContextBuilder.SetSettings.
 type Settings struct {
-	ptr *C.C2paSettings
+	ptr unsafe.Pointer
 }
 
 // NewSettings creates a new Settings with defaults.
 func NewSettings() (*Settings, error) {
-	ptr := C.c2pa_settings_new()
+	ptr := c2paSettingsNew()
 	if ptr == nil {
 		return nil, fmt.Errorf("failed to create c2pa settings: %s", c2paError())
 	}
@@ -29,7 +26,7 @@ func NewSettings() (*Settings, error) {
 // Close releases the underlying C settings. Safe to call multiple times.
 func (s *Settings) Close() {
 	if s.ptr != nil {
-		C.c2pa_free(unsafe.Pointer(s.ptr))
+		c2paFree(s.ptr)
 		s.ptr = nil
 	}
 }
@@ -40,11 +37,7 @@ func (s *Settings) UpdateFromString(content, format string) error {
 	if s.ptr == nil {
 		return fmt.Errorf("settings is closed")
 	}
-	cContent := C.CString(content)
-	defer C.free(unsafe.Pointer(cContent))
-	cFormat := C.CString(format)
-	defer C.free(unsafe.Pointer(cFormat))
-	if rc := C.c2pa_settings_update_from_string(s.ptr, cContent, cFormat); rc != 0 {
+	if rc := c2paSettingsUpdateFromString(s.ptr, content, format); rc != 0 {
 		return fmt.Errorf("failed to update settings: %s", c2paError())
 	}
 	return nil
@@ -56,11 +49,7 @@ func (s *Settings) SetValue(path, jsonValue string) error {
 	if s.ptr == nil {
 		return fmt.Errorf("settings is closed")
 	}
-	cPath := C.CString(path)
-	defer C.free(unsafe.Pointer(cPath))
-	cValue := C.CString(jsonValue)
-	defer C.free(unsafe.Pointer(cValue))
-	if rc := C.c2pa_settings_set_value(s.ptr, cPath, cValue); rc != 0 {
+	if rc := c2paSettingsSetValue(s.ptr, path, jsonValue); rc != 0 {
 		return fmt.Errorf("failed to set settings value: %s", c2paError())
 	}
 	return nil

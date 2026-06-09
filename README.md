@@ -63,6 +63,12 @@ c2pa-rs/              Pinned upstream submodule built into the c2pa_c static lib
 - `git submodule update --init --recursive` for the pinned c2pa-rs checkout
 - `node`/`npx` (only required to regenerate the `c2pa/schema/` package)
 
+The `c2pa` package also compiles cleanly with `CGO_ENABLED=0` — every cgo
+call is isolated in [c2pa/native.go](c2pa/native.go) and stubbed in
+[c2pa/native_nocgo.go](c2pa/native_nocgo.go). This is purely so that
+pkg.go.dev and other doc/indexing tools can build the package; at runtime
+every constructor returns a "native library unavailable" error.
+
 ## Building
 
 The repo uses `go:generate` for every build artifact that isn't pure Go. The
@@ -120,10 +126,13 @@ inside `c2pa-rs/c2pa_c_ffi` for the flavor matching the `-tags` passed to
 `go generate`. The cgo flag files in [c2pa](c2pa) point the linker at
 `c2pa-rs/target/{debug,release}` accordingly.
 
-Remote operations (remote manifest fetches, OCSP, RFC 3161
-timestamp authorities) can be serviced by a Go-side resolver wired up
-through `ContextBuilder.SetHttpResolver` — see [HTTP resolver](#http-resolver)
-below. The build is bundled with reqwest based resolver.
+Remote operations (remote manifest fetches, OCSP, RFC 3161 timestamp
+authorities) are handled by the bundled reqwest-based HTTP client in
+`libc2pa_c` and work out of the box. They can optionally be redirected to
+a Go-side resolver wired up through `ContextBuilder.SetHttpResolver` — see
+[HTTP resolver](#http-resolver) below — if you want to control transport,
+proxy through a custom `http.Client`, inject test fixtures, or eventually
+build `libc2pa_c` without the `http` feature.
 
 ### Using prebuilt C libraries
 
@@ -325,9 +334,15 @@ r.ResourceToFile("self#jumbf=c2pa.assertions/c2pa.thumbnail", "thumb.jpg")
 
 ### HTTP resolver
 
-The `c2pa_c` library is built with the reqwest-based `http` feature, but also implements a Go-side resolver.
-Operation that needs to make an HTTP request (fetching a remote manifest,OCSP, or an RFC 3161 timestamp) use the resolver. Install one on
-the `ContextBuilder` before calling `Build`:
+The `c2pa_c` library is built with the reqwest-based `http` feature, so
+remote-manifest fetches, OCSP lookups, and RFC 3161 timestamping (verified
+against `http://timestamp.digicert.com`) all work without any extra wiring.
+
+The bindings also expose an optional Go-side resolver. Use it when you want
+to route every C2PA HTTP request through your own `http.Client` (custom
+transport, proxy, request signing, fixtures in tests, etc.) or when you
+plan to build `libc2pa_c` without the `http` feature to shrink the binary.
+Install one on the `ContextBuilder` before calling `Build`:
 
 ```go
 builder, err := c2pa.NewContextBuilder()
@@ -364,7 +379,9 @@ type HttpResolver interface {
 ```
 
 The resolver is invoked synchronously from c2pa-rs; return errors normally
-and they are surfaced through the usual `C2paError()` channel.
+and they are surfaced through the usual `C2paError()` channel. Installing
+a resolver fully replaces the bundled reqwest client for the lifetime of
+the `Context`.
 
 ### Typed APIs
 

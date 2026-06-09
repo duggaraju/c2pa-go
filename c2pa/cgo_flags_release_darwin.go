@@ -1,5 +1,5 @@
-//go:build darwin && release
-// +build darwin,release
+//go:build cgo && darwin && release
+// +build cgo,darwin,release
 
 package c2pa
 

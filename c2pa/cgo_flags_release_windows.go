@@ -1,5 +1,5 @@
-//go:build windows && release
-// +build windows,release
+//go:build cgo && windows && release
+// +build cgo,windows,release
 
 package c2pa
 
