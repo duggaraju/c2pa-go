@@ -207,12 +207,12 @@ func (b *Builder) SignStream(format string, input *os.File, output *os.File, sig
 	var manifest []byte
 	var n int64
 	if signer != nil {
-		adapter, err := newSigner(signer)
+		native, err := takeNativeSigner(signer)
 		if err != nil {
 			return nil, err
 		}
-		defer adapter.Close()
-		manifest, n = c2paBuilderSign(b.ptr, format, input_stream.ptr, output_stream.ptr, adapter.ptr)
+		defer native.Close()
+		manifest, n = c2paBuilderSign(b.ptr, format, input_stream.ptr, output_stream.ptr, native.ptr)
 	} else {
 		manifest, n = c2paBuilderSignContext(b.ptr, format, input_stream.ptr, output_stream.ptr)
 	}
@@ -376,11 +376,11 @@ func (b *Builder) DataHashedPlaceholder(reservedSize int, format string) ([]byte
 // pre-computed data hash JSON. asset may be nil if the hash JSON already
 // contains the computed hash values.
 func (b *Builder) SignDataHashedEmbeddable(signer Signer, dataHashJson string, format string, asset *os.File) ([]byte, error) {
-	adapter, err := newSigner(signer)
+	native, err := takeNativeSigner(signer)
 	if err != nil {
 		return nil, err
 	}
-	defer adapter.Close()
+	defer native.Close()
 
 	var assetPtr unsafe.Pointer
 	if asset != nil {
@@ -392,7 +392,7 @@ func (b *Builder) SignDataHashedEmbeddable(signer Signer, dataHashJson string, f
 		assetPtr = s.ptr
 	}
 
-	out, n := c2paBuilderSignDataHashedEmbeddable(b.ptr, adapter.ptr, dataHashJson, format, assetPtr)
+	out, n := c2paBuilderSignDataHashedEmbeddable(b.ptr, native.ptr, dataHashJson, format, assetPtr)
 	if n < 0 {
 		return nil, fmt.Errorf("failed to sign data hashed embeddable: %s", c2paError())
 	}

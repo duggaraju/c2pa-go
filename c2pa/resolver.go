@@ -21,12 +21,9 @@ type HttpResolver interface {
 	Resolve(req *http.Request) (*http.Response, error)
 }
 
-// HttpResolverAdapter bridges a Go HttpResolver to a C2paHttpResolver*. The
-// adapter is consumed by ContextBuilder.SetHttpResolver; after a successful
-// call to SetHttpResolver the adapter's C pointer is owned by the builder and
-// must not be freed by the caller. The Go-side cgo.Handle is released when
-// Close is called.
-type HttpResolverAdapter struct {
+// httpResolverAdapter bridges a Go HttpResolver to a C2paHttpResolver*.
+// It is an internal implementation detail used by ContextBuilder.
+type httpResolverAdapter struct {
 	resolver HttpResolver
 	ptr      unsafe.Pointer
 	handle   cgo.Handle
@@ -47,14 +44,12 @@ func (d *DefaultHttpResolver) Resolve(req *http.Request) (*http.Response, error)
 	return client.Do(req)
 }
 
-// NewHttpResolver wraps a Go HttpResolver in a C-callable resolver. The
-// returned adapter must be either passed to ContextBuilder.SetHttpResolver
-// (which takes ownership of the C pointer) or released with Close.
-func NewHttpResolver(resolver HttpResolver) (*HttpResolverAdapter, error) {
+// newHttpResolver wraps a Go HttpResolver in a C-callable resolver adapter.
+func newHttpResolver(resolver HttpResolver) (*httpResolverAdapter, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("resolver is nil")
 	}
-	a := &HttpResolverAdapter{resolver: resolver}
+	a := &httpResolverAdapter{resolver: resolver}
 	a.handle = cgo.NewHandle(a)
 	a.ptr = c2paHttpResolverCreate(uintptr(a.handle))
 	if a.ptr == nil {
@@ -64,10 +59,9 @@ func NewHttpResolver(resolver HttpResolver) (*HttpResolverAdapter, error) {
 	return a, nil
 }
 
-// Close releases the underlying C resolver if it has not been consumed by
-// ContextBuilder.SetHttpResolver, and always releases the Go-side handle.
+// Close releases the underlying C resolver and Go-side handle.
 // Safe to call multiple times.
-func (a *HttpResolverAdapter) Close() {
+func (a *httpResolverAdapter) Close() {
 	if a == nil {
 		return
 	}
@@ -107,7 +101,7 @@ func parseHeaders(raw string) http.Header {
 // goHttpResolve is invoked from the cgo httpResolverCallback in native.go.
 // Returns (status, body, errMsg); errMsg is non-empty on failure.
 func goHttpResolve(handle uintptr, url, method, headers string, body []byte) (int, []byte, string) {
-	adapter, ok := cgo.Handle(handle).Value().(*HttpResolverAdapter)
+	adapter, ok := cgo.Handle(handle).Value().(*httpResolverAdapter)
 	if !ok || adapter == nil || adapter.resolver == nil {
 		return 0, nil, "Other: http resolver handle is invalid"
 	}

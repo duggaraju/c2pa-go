@@ -1,7 +1,7 @@
-// fetchlib downloads the prebuilt c2pa-rs library bundle for the current
+// fetchlib downloads the prebuilt native library bundle for the current
 // GOOS/GOARCH from a GitHub Release of duggaraju/c2pa-go and extracts it into
 // the location the cgo flags expect (../c2pa-rs/target/release by default), so
-// consumers can build the package without a Rust toolchain.
+// consumers can build the bindings without a Rust toolchain.
 //
 // Typical use from a checkout of this repo:
 //

@@ -33,8 +33,8 @@
 //
 // # Signing assets
 //
-// Implement the [Signer] interface (or wrap your own signing callback) and
-// drive [Builder.Sign]:
+// Implement the [CallbackSigner] interface (or use a native-backed [Signer])
+// and drive [Builder.Sign]:
 //
 //	b, err := c2pa.BuilderFromJson(ctx, manifestJson)
 //	if err != nil { ... }

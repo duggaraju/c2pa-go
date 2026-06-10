@@ -36,7 +36,7 @@ produced by the `c2pa_c_ffi` crate.
 c2pa/                 Go package (module github.com/duggaraju/c2pa-go/c2pa)
 c2pa/schema/          Generated Go types from the c2pa JSON schemas
                       (package github.com/duggaraju/c2pa-go/c2pa/schema)
-c2pa/cmd/fetchlib/    Helper CLI that downloads the prebuilt libc2pa_c
+c2pa/cmd/fetchlib/    Helper CLI that downloads the prebuilt native library
                       tarball for the current OS/arch from a GitHub Release
                       and extracts it into c2pa-rs/target/release (see
                       "Using prebuilt C libraries" below)
@@ -259,9 +259,10 @@ defer ctx.Close()
 
 ### Signing an asset
 
-Provide a manifest definition and an implementation of `c2pa.Signer`. The
-binding will invoke `Sign` via a cgo callback when c2pa-rs needs a COSE
-signature over the claim bytes.
+Provide a manifest definition and a signer accepted by `Builder.Sign`.
+For Go callback-based signing, implement `c2pa.CallbackSigner`; the binding
+will invoke `Sign` via a cgo callback when c2pa-rs needs a COSE signature over
+the claim bytes.
 
 ```go
 manifestJson := `{
@@ -280,7 +281,7 @@ if err != nil { log.Fatal(err) }
 fmt.Printf("wrote %d manifest bytes\n", len(manifest))
 ```
 
-A minimal `Signer` implementation (PS256, RSA-PSS over SHA-256):
+A minimal `CallbackSigner` implementation (PS256, RSA-PSS over SHA-256):
 
 ```go
 type MyPs256Signer struct {
@@ -349,16 +350,10 @@ builder, err := c2pa.NewContextBuilder()
 if err != nil { log.Fatal(err) }
 defer builder.Close()
 
-resolver, err := c2pa.NewHttpResolver(&c2pa.DefaultHttpResolver{
+resolver := &c2pa.DefaultHttpResolver{
     // Optional; defaults to http.DefaultClient.
     Client: &http.Client{Timeout: 30 * time.Second},
-})
-if err != nil { log.Fatal(err) }
-// Keep `resolver` alive at least as long as the Context built below — it
-// owns the cgo.Handle the C side calls back into. After SetHttpResolver,
-// the C resolver pointer is consumed by the builder; Close() then only
-// releases the Go-side handle.
-defer resolver.Close()
+}
 
 if err := builder.SetHttpResolver(resolver); err != nil {
     log.Fatal(err)

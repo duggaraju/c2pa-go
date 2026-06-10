@@ -138,7 +138,10 @@ func TestSignerInfoReserveSize(t *testing.T) {
 		SignCert:   string(signCert),
 		PrivateKey: string(privateKey),
 	})
-	size, err := signer.ReserveSize()
+	assert.NoError(t, err)
+	reserveSizer, ok := signer.(interface{ ReserveSize() (int64, error) })
+	assert.True(t, ok)
+	size, err := reserveSizer.ReserveSize()
 	assert.NoError(t, err)
 	assert.Greater(t, size, int64(0))
 }
@@ -164,11 +167,16 @@ func TestNewIdentitySigner(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	signer, err := newIdentitySigner(claimSigner, identitySigner, []string{"c2pa.actions"}, []string{"author"})
+	signer, err := NewIdentitySigner(claimSigner, identitySigner, []string{"c2pa.actions"}, []string{"author"})
 	assert.NoError(t, err)
 	if signer != nil {
-		defer signer.Close()
-		size, reserveErr := signer.ReserveSize()
+		closer, ok := signer.(interface{ Close() })
+		if ok {
+			defer closer.Close()
+		}
+		reserveSizer, ok := signer.(interface{ ReserveSize() (int64, error) })
+		assert.True(t, ok)
+		size, reserveErr := reserveSizer.ReserveSize()
 		assert.NoError(t, reserveErr)
 		assert.Greater(t, size, int64(0))
 	}

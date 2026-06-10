@@ -131,13 +131,7 @@ func createContextBuilder(settingsPath string) (*c2pa.ContextBuilder, error) {
 	if err != nil {
 		return nil, err
 	}
-	resolver, err := c2pa.NewHttpResolver(&c2pa.DefaultHttpResolver{})
-	if err != nil {
-		builder.Close()
-		return nil, err
-	}
-	defer resolver.Close()
-	if err := builder.SetHttpResolver(resolver); err != nil {
+	if err := builder.SetHttpResolver(&c2pa.DefaultHttpResolver{}); err != nil {
 		builder.Close()
 		return nil, err
 	}

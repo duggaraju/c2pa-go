@@ -115,7 +115,7 @@ jobs:
           CGO_ENABLED: '1'
         run: |
           go build -tags=release ./c2pa
-          go build -tags=release -o dist/c2pa-cli ./c2pa-cli
+          cd c2pa-cli && go build -tags=release
 
       - name: Go build (release, windows arm64)
         if: matrix.os == 'windows' && matrix.goarch == 'arm64'
@@ -131,7 +131,7 @@ jobs:
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_AR: llvm-ar
         run: |
           go build -tags=release ./c2pa
-          go build -tags=release -o dist/c2pa-cli.exe ./c2pa-cli
+          cd c2pa-cli && go build -tags=release
 
       - name: Go test (release)
         if: matrix.os != 'windows' || matrix.goarch != 'arm64'
@@ -156,6 +156,7 @@ jobs:
       - name: Stage release binaries
         run: |
           set -euo pipefail
+          rm -rf dist
           mkdir -p dist
           cp c2pa-rs/target/release/libc2pa_c.*  dist/ 2>/dev/null || true
           cp c2pa-rs/target/release/c2pa_c.lib   dist/ 2>/dev/null || true

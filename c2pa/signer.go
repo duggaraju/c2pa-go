@@ -7,10 +7,23 @@ import (
 )
 
 type Signer interface {
-	Sign(input []byte, output []byte) (int, error)
 	Alg() SigningAlg
 	TimeStampUrl() string
 	Certificates() string
+}
+
+// CallbackSigner extends Signer with a callback-based Sign method.
+// Use this for Go-implemented signers that receive input bytes to sign.
+type CallbackSigner interface {
+	Signer
+	Sign(input []byte, output []byte) (int, error)
+}
+
+// nativeBackedSigner is implemented by Signer implementations that already
+// own a native C2PA signer and can transfer ownership to the caller.
+type nativeBackedSigner interface {
+	Signer
+	takeNativeSigner() (*NativeSigner, error)
 }
 
 // SignerInfo configures a built-in signer that signs locally with a private
@@ -27,9 +40,22 @@ type SignerInfo struct {
 }
 
 type NativeSigner struct {
-	signer  Signer
+	signer  CallbackSigner
 	ptr     unsafe.Pointer
 	handles []cgo.Handle
+}
+
+// signerFromInfo is a Signer backed by a native signer created from SignerInfo.
+type signerFromInfo struct {
+	info   SignerInfo
+	native *NativeSigner
+}
+
+// identitySigner is a Signer backed by a native identity signer.
+type identitySigner struct {
+	claim    Signer
+	identity Signer
+	native   *NativeSigner
 }
 
 // goSignerCallback is invoked from the cgo signerCallback in native.go.
@@ -66,10 +92,10 @@ func (s *NativeSigner) ReserveSize() (int64, error) {
 	return size, nil
 }
 
-// newSigner wraps a user-provided Signer in an adapter that exposes a
+// newSigner wraps a user-provided CallbackSigner in an adapter that exposes a
 // C-callable signing callback. The returned adapter owns a C2paSigner and a
 // cgo.Handle; both are released by Close.
-func newSigner(signer Signer) (*NativeSigner, error) {
+func newSigner(signer CallbackSigner) (*NativeSigner, error) {
 	s := &NativeSigner{
 		signer: signer,
 		ptr:    nil,
@@ -85,7 +111,7 @@ func newSigner(signer Signer) (*NativeSigner, error) {
 	return s, nil
 }
 
-func NewSignerFromInfo(info SignerInfo) (*NativeSigner, error) {
+func nativeSignerFromInfo(info SignerInfo) (*NativeSigner, error) {
 	ptr := c2paSignerFromInfo(info.Alg, info.SignCert, info.PrivateKey, info.TimestampUrl)
 	if ptr == nil {
 		return nil, fmt.Errorf("failed to create signer from info: %s", c2paError())
@@ -93,18 +119,50 @@ func NewSignerFromInfo(info SignerInfo) (*NativeSigner, error) {
 	return &NativeSigner{ptr: ptr}, nil
 }
 
-func NewIdentitySigner(c2paSigner Signer, identitySigner Signer, referencedAssertions []string, roles []string) (*NativeSigner, error) {
-	is, err := newSigner(identitySigner)
+// NewSignerFromInfo creates a native-backed Signer from certificate/private-key
+// material. The returned signer can be passed directly to SetSigner or
+// NewIdentitySigner.
+func NewSignerFromInfo(info SignerInfo) (Signer, error) {
+	native, err := nativeSignerFromInfo(info)
 	if err != nil {
 		return nil, err
 	}
-	defer is.Close()
-	cs, err := newSigner(c2paSigner)
+	return &signerFromInfo{info: info, native: native}, nil
+}
+
+func takeNativeSigner(signer Signer) (*NativeSigner, error) {
+	if signer == nil {
+		return nil, fmt.Errorf("signer is nil")
+	}
+	if nativeBacked, ok := signer.(nativeBackedSigner); ok {
+		return nativeBacked.takeNativeSigner()
+	}
+	if callbackSigner, ok := signer.(CallbackSigner); ok {
+		return newSigner(callbackSigner)
+	}
+	return nil, fmt.Errorf("signer does not implement CallbackSigner and is not native-backed")
+}
+
+// NewIdentitySigner combines two Signers into a single Signer that emits both
+// the C2PA claim signature and an X.509 identity assertion.
+func NewIdentitySigner(c2paSigner Signer, idSigner Signer, referencedAssertions []string, roles []string) (Signer, error) {
+	is, err := takeNativeSigner(idSigner)
 	if err != nil {
 		return nil, err
 	}
-	defer cs.Close()
-	return newIdentitySigner(cs, is, referencedAssertions, roles)
+	cs, err := takeNativeSigner(c2paSigner)
+	if err != nil {
+		is.Close()
+		return nil, err
+	}
+
+	native, err := newIdentitySigner(cs, is, referencedAssertions, roles)
+	if err != nil {
+		cs.Close()
+		is.Close()
+		return nil, err
+	}
+	return &identitySigner{claim: c2paSigner, identity: idSigner, native: native}, nil
 }
 
 // NewIdentitySigner combines two native signers into a single signer that
@@ -134,6 +192,96 @@ func newIdentitySigner(c2paSigner *NativeSigner, identitySigner *NativeSigner, r
 	return &NativeSigner{ptr: ptr, handles: handles}, nil
 }
 
+func (s *signerFromInfo) Alg() SigningAlg {
+	if s == nil {
+		return ""
+	}
+	return s.info.Alg
+}
+
+func (s *signerFromInfo) TimeStampUrl() string {
+	if s == nil {
+		return ""
+	}
+	return s.info.TimestampUrl
+}
+
+func (s *signerFromInfo) Certificates() string {
+	if s == nil {
+		return ""
+	}
+	return s.info.SignCert
+}
+
+func (s *signerFromInfo) takeNativeSigner() (*NativeSigner, error) {
+	if s == nil || s.native == nil || s.native.ptr == nil {
+		return nil, fmt.Errorf("signer is nil")
+	}
+	native := s.native
+	s.native = nil
+	return native, nil
+}
+
+func (s *signerFromInfo) ReserveSize() (int64, error) {
+	if s == nil || s.native == nil {
+		return 0, fmt.Errorf("signer is nil")
+	}
+	return s.native.ReserveSize()
+}
+
+func (s *signerFromInfo) Close() {
+	if s == nil || s.native == nil {
+		return
+	}
+	s.native.Close()
+	s.native = nil
+}
+
+func (s *identitySigner) Alg() SigningAlg {
+	if s == nil || s.claim == nil {
+		return ""
+	}
+	return s.claim.Alg()
+}
+
+func (s *identitySigner) TimeStampUrl() string {
+	if s == nil || s.claim == nil {
+		return ""
+	}
+	return s.claim.TimeStampUrl()
+}
+
+func (s *identitySigner) Certificates() string {
+	if s == nil || s.claim == nil {
+		return ""
+	}
+	return s.claim.Certificates()
+}
+
+func (s *identitySigner) takeNativeSigner() (*NativeSigner, error) {
+	if s == nil || s.native == nil || s.native.ptr == nil {
+		return nil, fmt.Errorf("identity signer is nil")
+	}
+	native := s.native
+	s.native = nil
+	return native, nil
+}
+
+func (s *identitySigner) ReserveSize() (int64, error) {
+	if s == nil || s.native == nil {
+		return 0, fmt.Errorf("identity signer is nil")
+	}
+	return s.native.ReserveSize()
+}
+
+func (s *identitySigner) Close() {
+	if s == nil || s.native == nil {
+		return
+	}
+	s.native.Close()
+	s.native = nil
+}
+
 // ed25519Signer is a Signer that produces Ed25519 signatures via the native
 // c2pa_ed25519_sign helper. Use NewEd25519Signer to construct one.
 type ed25519Signer struct {
@@ -149,8 +297,8 @@ const ed25519SignatureLen = 64
 // helper. privateKey is a PEM-encoded Ed25519 private key, certificates is the
 // matching PEM certificate chain, and timestampUrl is an optional RFC 3161
 // timestamp authority URL (pass "" to disable timestamping).
-func NewEd25519Signer(privateKey, certificates, timestampUrl string) Signer {
-	var s Signer = &ed25519Signer{
+func NewEd25519Signer(privateKey, certificates, timestampUrl string) CallbackSigner {
+	var s CallbackSigner = &ed25519Signer{
 		privateKey:   privateKey,
 		certificates: certificates,
 		timestampUrl: timestampUrl,
