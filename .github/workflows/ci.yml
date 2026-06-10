@@ -73,7 +73,9 @@ jobs:
         # release flavor via the go:generate directives in c2pa/generate*.go.
         env:
           CGO_ENABLED: '1'
-        run: go generate -tags=release ./c2pa/...
+        run: |
+          cd c2pa
+          GOWORK=off go generate -tags=release ./...
 
       - name: Run go generate (release, windows arm64)
         if: matrix.os == 'windows' && matrix.goarch == 'arm64'
@@ -87,13 +89,17 @@ jobs:
           AR: llvm-ar
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER: clang
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_AR: llvm-ar
-        run: go generate -tags=release ./c2pa/...
+        run: |
+          cd c2pa
+          GOWORK=off go generate -tags=release ./...
 
       - name: Go vet (release)
         if: matrix.os != 'windows' || matrix.goarch != 'arm64'
         env:
           CGO_ENABLED: '1'
-        run: go vet -tags=release ./c2pa/...
+        run: |
+          cd c2pa
+          GOWORK=off go vet -tags=release ./...
 
       - name: Go vet (release, windows arm64)
         if: matrix.os == 'windows' && matrix.goarch == 'arm64'
@@ -107,15 +113,19 @@ jobs:
           AR: llvm-ar
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER: clang
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_AR: llvm-ar
-        run: go vet -tags=release ./c2pa/...
+        run: |
+          cd c2pa
+          GOWORK=off go vet -tags=release ./...
 
       - name: Go build (release)
         if: matrix.os != 'windows' || matrix.goarch != 'arm64'
         env:
           CGO_ENABLED: '1'
         run: |
-          go build -tags=release ./c2pa
-          go build -tags=release -o dist/c2pa-cli ./c2pa-cli
+          cd c2pa
+          GOWORK=off go build -tags=release .
+          cd ../c2pa-cli
+          go build -tags=release -o ../dist/c2pa-cli .
 
       - name: Go build (release, windows arm64)
         if: matrix.os == 'windows' && matrix.goarch == 'arm64'
@@ -130,14 +140,18 @@ jobs:
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER: clang
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_AR: llvm-ar
         run: |
-          go build -tags=release ./c2pa
-          go build -tags=release -o dist/c2pa-cli.exe ./c2pa-cli
+          cd c2pa
+          GOWORK=off go build -tags=release .
+          cd ../c2pa-cli
+          go build -tags=release -o ../dist/c2pa-cli.exe .
 
       - name: Go test (release)
         if: matrix.os != 'windows' || matrix.goarch != 'arm64'
         env:
           CGO_ENABLED: '1'
-        run: go test -tags=release -v ./c2pa/...
+        run: |
+          cd c2pa
+          GOWORK=off go test -tags=release -v ./...
 
       - name: Go test (release, windows arm64)
         if: matrix.os == 'windows' && matrix.goarch == 'arm64'
@@ -151,7 +165,9 @@ jobs:
           AR: llvm-ar
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER: clang
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_AR: llvm-ar
-        run: go test -tags=release -v ./c2pa/...
+        run: |
+          cd c2pa
+          GOWORK=off go test -tags=release -v ./...
 
       - name: Stage release binaries
         run: |
