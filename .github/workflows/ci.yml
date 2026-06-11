@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [ main ]
-    tags: [ 'v*', 'c2pa/v*', 'c2pa-cli/v*' ]
+    tags: [ 'v*', 'c2pa/v*' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -203,6 +203,8 @@ jobs:
         run: |
           set -euo pipefail
           tag='${{ github.ref_name }}'
+          module2=''
+          ver2=''
           # Strip the module-scoped tag prefix to get the bare vX.Y.Z version,
           # then ask the Go module proxy to fetch the matching module so the
           # version becomes resolvable via `go get` / `go install`.
@@ -214,6 +216,8 @@ jobs:
             c2pa/v*)
               module='github.com/duggaraju/c2pa-go/c2pa'
               ver="${tag#c2pa/}"
+              module2='github.com/duggaraju/c2pa-go/c2pa-cli'
+              ver2="$ver"
               ;;
             *)
               module='github.com/duggaraju/c2pa-go/c2pa'
@@ -222,6 +226,10 @@ jobs:
           esac
           curl -fsSL "https://proxy.golang.org/${module}/@v/${ver}.info" || true
           go list -m -versions "$module" || true
+          if [ -n "$module2" ]; then
+            curl -fsSL "https://proxy.golang.org/${module2}/@v/${ver2}.info" || true
+            go list -m -versions "$module2" || true
+          fi
 
       - name: Download release binaries
         if: "!startsWith(github.ref, 'refs/tags/c2pa-cli/')"
