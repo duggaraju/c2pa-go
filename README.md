@@ -3,7 +3,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/duggaraju/c2pa-go/c2pa.svg)](https://pkg.go.dev/github.com/duggaraju/c2pa-go/c2pa)
 [![Go Report Card](https://goreportcard.com/badge/github.com/duggaraju/c2pa-go/c2pa)](https://goreportcard.com/report/github.com/duggaraju/c2pa-go/c2pa)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![c2pa-rs](https://img.shields.io/badge/c2pa--rs-v0.87.0-orange?logo=rust)](https://github.com/contentauth/c2pa-rs)
+[![c2pa-rs](https://img.shields.io/badge/c2pa--rs-v0.88.0-orange?logo=rust)](https://github.com/contentauth/c2pa-rs)
 
 Go bindings for the [c2pa-rs](https://github.com/contentauth/c2pa-rs) Content
 Authenticity SDK. This package exposes the C2PA reader, builder, signer and
@@ -13,7 +13,7 @@ Content Authenticity and Content Integrity metadata to media assets.
 
 **Keywords:** c2pa, c2pa-go,  c2pa-rs, Content Authenticity, Content Integrity, Content Credentials, content provenance.
 
-The bindings track c2pa-rs `0.87.x` and link against the `c2pa_c` shared library
+The bindings track c2pa-rs `0.88.x` and link against the `c2pa_c` shared library
 produced by the `c2pa_c_ffi` crate.
 
 ## Status
