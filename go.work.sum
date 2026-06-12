@@ -1,5 +1,5 @@
 github.com/a-h/generate v0.0.0-20220105161013-96c14dfdfb60/go.mod h1:traiLYQ0YD7qUMCdjo6/jSaJRPHXniX4HVs+PhEhYpc=
-github.com/duggaraju/c2pa-go/c2pa v0.86.1/go.mod h1:uB51pAAYa0QBPMpyHBXBe86GquL0Dm4sF2qG1pDJilc=
+github.com/duggaraju/c2pa-go/c2pa v0.87.0/go.mod h1:uB51pAAYa0QBPMpyHBXBe86GquL0Dm4sF2qG1pDJilc=
 github.com/stretchr/objx v0.5.2 h1:xuMeJ0Sdp5ZMRXx/aWO6RZxdr3beISkG5/G/aIRr3pY=
 github.com/stretchr/objx v0.5.2/go.mod h1:FRsXN1f5AsAjCGJKqEizvkpNtU+EGNCLh3NxZ/8L+MA=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
