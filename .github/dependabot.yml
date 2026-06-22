@@ -1,0 +1,84 @@
+version: 2
+updates:
+  # Go module dependencies in c2pa
+  - package-ecosystem: "gomod"
+    directory: "/c2pa"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 1
+    reviewers:
+      - "duggaraju"
+    labels:
+      - "dependencies"
+      - "go"
+    commit-message:
+      prefix: "chore(deps):"
+      include: "scope"
+    allow:
+      - dependency-type: "all"
+    ignore:
+      # Ignore major version updates for indirect dependencies
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+    pull-request-branch-name:
+      separator: "/"
+    groups:
+      go-updates:
+        patterns:
+          - "*"
+
+  # Go module dependencies in c2pa-cli
+  - package-ecosystem: "gomod"
+    directory: "/c2pa-cli"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 1
+    reviewers:
+      - "duggaraju"
+    labels:
+      - "dependencies"
+      - "go"
+    commit-message:
+      prefix: "chore(deps):"
+      include: "scope"
+    allow:
+      - dependency-type: "all"
+    ignore:
+      # Ignore major version updates for indirect dependencies
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+    pull-request-branch-name:
+      separator: "/"
+    groups:
+      go-cli-updates:
+        patterns:
+          - "*"
+
+  # GitHub Actions workflow updates
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    open-pull-requests-limit: 1
+    reviewers:
+      - "duggaraju"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci(deps):"
+      include: "scope"
+    pull-request-branch-name:
+      separator: "/"
+    groups:
+      actions-updates:
+        patterns:
+          - "*"
