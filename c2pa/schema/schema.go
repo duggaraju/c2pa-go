@@ -1457,6 +1457,11 @@ type Core struct {
 	// [`IdentityAssertion`]: crate::identity::IdentityAssertion
 	// [`Reader`]: crate::Reader
 	DecodeIdentityAssertions *bool `json:"decode_identity_assertions,omitempty"`
+	// Maximum size in megabytes of a Brotli-decompressed JUMBF manifest.
+	// Limits memory consumption from decompression bomb attacks.
+	//
+	// The default is 32 MB.
+	MaxDecompressedManifestSizeInMB *int64 `json:"max_decompressed_manifest_size_in_mb,omitempty"`
 	// Size of the [`BmffHash`] merkle tree chunks in kilobytes.
 	//
 	// This option is associated with the [`MerkleMap::fixed_block_size`] field.
