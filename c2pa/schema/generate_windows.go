@@ -19,7 +19,7 @@ package schema
 // The schema.go file is checked in and will be used as-is.
 // TODO: Re-enable schema generation when c2pa-rs export_schema can build without OpenSSL on Windows.
 //
-// //go:generate cmd /C "cd ../../c2pa-rs/export_schema && cargo run --release --no-default-features"
+// //go:generate cmd /C "cd ../../c2pa-rs/export_schema && cargo run --release --features c2pa/rust_native_crypto"
 // //go:generate powershell -NoProfile -Command "(Get-Content ../../c2pa-rs/export_schema/target/schema/Reader.schema.json) -replace '\"title\": \"Reader\"', '\"title\": \"ManifestStore\"' | Set-Content ManifestStore.schema.json"
 // //go:generate npx --yes quicktype -s schema -l go --package schema --out schema.go ../../c2pa-rs/export_schema/target/schema/ManifestDefinition.schema.json ManifestStore.schema.json ../../c2pa-rs/export_schema/target/schema/Settings.schema.json
 // //go:generate gofmt -w schema.go
