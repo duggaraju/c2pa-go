@@ -374,7 +374,7 @@ type TextClass struct {
 	Selectors []SelectorElement `json:"selectors"`
 }
 
-// One or two [`TextSelector`][TextSelector] identifiying the range to select.
+// One or two [`TextSelector`] identifiying the range to select.
 type SelectorElement struct {
 	// The end of the text range.
 	End *EndClass `json:"end"`
@@ -832,7 +832,7 @@ type RegionText struct {
 	Selectors []TextSelector `json:"selectors"`
 }
 
-// One or two [`TextSelector`][TextSelector] identifiying the range to select.
+// One or two [`TextSelector`] identifiying the range to select.
 type TextSelector struct {
 	// The end of the text range.
 	End *SelectorSelector `json:"end"`
