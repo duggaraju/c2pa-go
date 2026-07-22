@@ -3,7 +3,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/duggaraju/c2pa-go/c2pa.svg)](https://pkg.go.dev/github.com/duggaraju/c2pa-go/c2pa)
 [![Go Report Card](https://goreportcard.com/badge/github.com/duggaraju/c2pa-go/c2pa)](https://goreportcard.com/report/github.com/duggaraju/c2pa-go/c2pa)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![c2pa-rs](https://img.shields.io/badge/c2pa--rs-v0.90.0-orange?logo=rust)](https://github.com/contentauth/c2pa-rs)
+[![c2pa-rs](https://img.shields.io/badge/c2pa--rs-v0.90.1-orange?logo=rust)](https://github.com/contentauth/c2pa-rs)
 
 Go bindings for the [c2pa-rs](https://github.com/contentauth/c2pa-rs) Content
 Authenticity SDK. This package exposes the C2PA reader, builder, signer and
