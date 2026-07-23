@@ -73,12 +73,12 @@ func (b *Builder) AddResource(uri string, file *os.File) error {
 }
 
 // AddResourceFromFile is a convenience wrapper that opens path and adds it as a resource.
-func (b *Builder) AddResourceFromFile(uri string, path string) error {
+func (b *Builder) AddResourceFromFile(uri string, path string) (err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("failed to open %s: %v", path, err)
 	}
-	defer f.Close()
+	defer closeAndJoin(&err, f)
 	return b.AddResource(uri, f)
 }
 
@@ -99,12 +99,12 @@ func (b *Builder) AddIngredientFromStream(ingredientJson string, format string, 
 
 // AddIngredientFromFile is a convenience wrapper that opens path and adds it as
 // an ingredient, deriving the format from the file extension.
-func (b *Builder) AddIngredientFromFile(ingredientJson string, path string) error {
+func (b *Builder) AddIngredientFromFile(ingredientJson string, path string) (err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("failed to open %s: %v", path, err)
 	}
-	defer f.Close()
+	defer closeAndJoin(&err, f)
 	ext := filepath.Ext(path)
 	if len(ext) > 0 {
 		ext = ext[1:]
@@ -128,12 +128,12 @@ func (b *Builder) ToArchive(file *os.File) error {
 
 // ToArchiveFile is a convenience wrapper that creates path and writes the
 // builder archive to it.
-func (b *Builder) ToArchiveFile(path string) error {
+func (b *Builder) ToArchiveFile(path string) (err error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("failed to create %s: %v", path, err)
 	}
-	defer f.Close()
+	defer closeAndJoin(&err, f)
 	return b.ToArchive(f)
 }
 
@@ -155,12 +155,12 @@ func (b *Builder) AddIngredientFromArchive(file *os.File) error {
 
 // AddIngredientFromArchiveFile opens path and adds it to this builder via
 // AddIngredientFromArchive.
-func (b *Builder) AddIngredientFromArchiveFile(path string) error {
+func (b *Builder) AddIngredientFromArchiveFile(path string) (err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("failed to open %s: %v", path, err)
 	}
-	defer f.Close()
+	defer closeAndJoin(&err, f)
 	return b.AddIngredientFromArchive(f)
 }
 
@@ -182,12 +182,12 @@ func (b *Builder) WriteIngredientArchive(ingredientId string, file *os.File) err
 
 // WriteIngredientArchiveFile creates path and writes a single-ingredient C2PA
 // archive to it.
-func (b *Builder) WriteIngredientArchiveFile(ingredientId, path string) error {
+func (b *Builder) WriteIngredientArchiveFile(ingredientId, path string) (err error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("failed to create %s: %v", path, err)
 	}
-	defer f.Close()
+	defer closeAndJoin(&err, f)
 	return b.WriteIngredientArchive(ingredientId, f)
 }
 
@@ -222,7 +222,7 @@ func (b *Builder) SignStream(format string, input *os.File, output *os.File, sig
 	return manifest, nil
 }
 
-func (b *Builder) SignFile(input_file string, output_file string, signer Signer) ([]byte, error) {
+func (b *Builder) SignFile(input_file string, output_file string, signer Signer) (manifest []byte, err error) {
 	ext := filepath.Ext(input_file)
 	format := ""
 	if len(ext) > 0 {
@@ -233,13 +233,13 @@ func (b *Builder) SignFile(input_file string, output_file string, signer Signer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file %s: %v", input_file, err)
 	}
-	defer input.Close()
+	defer closeAndJoin(&err, input)
 
 	output, err := os.Create(output_file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create file %s: %v", output_file, err)
 	}
-	defer output.Close()
+	defer closeAndJoin(&err, output)
 
 	return b.SignStream(format, input, output, signer)
 }
@@ -268,7 +268,7 @@ func NewBuilder(ctx *Context) (*Builder, error) {
 func (b *Builder) WithDefinition(json string) (*Builder, error) {
 	ptr := c2paBuilderWithDefinition(b.ptr, json)
 	if ptr == nil {
-		return nil, fmt.Errorf("Failed to set definition: %s", c2paError())
+		return nil, fmt.Errorf("failed to set definition: %s", c2paError())
 	}
 	b.ptr = ptr
 	return b, nil
@@ -293,12 +293,12 @@ func (b *Builder) FromArchive(file *os.File) (*Builder, error) {
 }
 
 // BuilderFromArchiveFile is a convenience wrapper around BuilderFromArchive.
-func (b *Builder) FromArchiveFile(path string) (*Builder, error) {
+func (b *Builder) FromArchiveFile(path string) (_ *Builder, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open %s: %v", path, err)
 	}
-	defer f.Close()
+	defer closeAndJoin(&err, f)
 	return b.FromArchive(f)
 }
 

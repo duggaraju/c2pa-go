@@ -67,12 +67,12 @@ func (r *Reader) ResourceToStream(uri string, file *os.File) (int64, error) {
 }
 
 // ResourceToFile writes the resource identified by uri to the given path.
-func (r *Reader) ResourceToFile(uri string, path string) (int64, error) {
+func (r *Reader) ResourceToFile(uri string, path string) (_ int64, err error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create %s: %v", path, err)
 	}
-	defer f.Close()
+	defer closeAndJoin(&err, f)
 	return r.ResourceToStream(uri, f)
 }
 
@@ -95,12 +95,12 @@ func (r *Reader) WithStream(format string, file *os.File) error {
 
 // WithFile opens path, derives the format from its extension, and configures
 // the reader via WithStream.
-func (r *Reader) WithFile(path string) error {
+func (r *Reader) WithFile(path string) (err error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("failed to open file %s: %v", path, err)
 	}
-	defer file.Close()
+	defer closeAndJoin(&err, file)
 
 	format := filepath.Ext(path)
 	if len(format) > 0 {

@@ -89,6 +89,22 @@ jobs:
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_AR: llvm-ar
         run: go generate -tags=release ./c2pa/...
 
+      - name: golangci-lint (c2pa)
+        if: matrix.os == 'linux' && matrix.goarch == 'amd64'
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.5
+          working-directory: c2pa
+          args: --build-tags=release ./...
+
+      - name: golangci-lint (c2pa-cli)
+        if: matrix.os == 'linux' && matrix.goarch == 'amd64'
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.5
+          working-directory: c2pa-cli
+          args: --build-tags=release ./...
+
       - name: Go vet (release)
         if: matrix.os != 'windows' || matrix.goarch != 'arm64'
         env:

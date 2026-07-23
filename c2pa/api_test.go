@@ -56,7 +56,9 @@ func TestNewSettings(t *testing.T) {
 func TestNewStream(t *testing.T) {
 	file, err := os.CreateTemp(t.TempDir(), "stream-*.bin")
 	assert.NoError(t, err)
-	defer file.Close()
+	defer func() {
+		assert.NoError(t, file.Close())
+	}()
 
 	stream, err := NewStream(file)
 	assert.NoError(t, err)

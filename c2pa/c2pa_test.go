@@ -232,7 +232,9 @@ func TestBuilderSignWithContext_Valid(t *testing.T) {
 		f, openErr := os.Open(output)
 		assert.NoError(t, openErr)
 		if f != nil {
-			defer f.Close()
+			defer func() {
+				assert.NoError(t, f.Close())
+			}()
 			assert.NoError(t, r.WithStream("jpg", f))
 		}
 		assert.NotEmpty(t, r.Json())

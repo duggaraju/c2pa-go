@@ -2,6 +2,7 @@ package c2pa
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -121,10 +122,16 @@ func goHttpResolve(handle uintptr, url, method, headers string, body []byte) (in
 	if err != nil {
 		return 0, nil, fmt.Sprintf("Other: %s", err)
 	}
-	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
+		closeErr := resp.Body.Close()
+		if closeErr != nil {
+			return 0, nil, fmt.Sprintf("Other: %s", errors.Join(err, closeErr))
+		}
+		return 0, nil, fmt.Sprintf("Other: %s", err)
+	}
+	if err := resp.Body.Close(); err != nil {
 		return 0, nil, fmt.Sprintf("Other: %s", err)
 	}
 	return resp.StatusCode, respBody, ""

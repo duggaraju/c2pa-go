@@ -85,7 +85,9 @@ func main() {
 
 	switch sub {
 	case "read":
-		readCmd.Parse(os.Args[2:])
+		if err := readCmd.Parse(os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
 		if *readIn == "" {
 			log.Fatalf("read: -i is required")
 		}
@@ -96,7 +98,9 @@ func main() {
 		defer builder.Close()
 		handleRead(builder, *readIn)
 	case "sign":
-		signCmd.Parse(os.Args[2:])
+		if err := signCmd.Parse(os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
 		if *signIn == "" {
 			log.Fatalf("sign: -i is required")
 		}

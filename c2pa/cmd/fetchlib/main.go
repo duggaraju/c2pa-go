@@ -18,6 +18,7 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -114,12 +115,14 @@ func releaseDownloadURL(repoSlug, tag, asset string) string {
 		repoSlug, url.PathEscape(tag), asset)
 }
 
-func downloadAndExtract(dlURL, dest string) error {
+func downloadAndExtract(dlURL, dest string) (err error) {
 	resp, err := http.Get(dlURL)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		err = errors.Join(err, resp.Body.Close())
+	}()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed: %s", resp.Status)
 	}
@@ -128,7 +131,9 @@ func downloadAndExtract(dlURL, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer gz.Close()
+	defer func() {
+		err = errors.Join(err, gz.Close())
+	}()
 
 	tr := tar.NewReader(gz)
 	for {
@@ -156,7 +161,7 @@ func downloadAndExtract(dlURL, dest string) error {
 			if err := os.MkdirAll(out, 0o755); err != nil {
 				return err
 			}
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 				return err
 			}
@@ -164,12 +169,10 @@ func downloadAndExtract(dlURL, dest string) error {
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(f, tr); err != nil {
-				f.Close()
-				return err
-			}
-			if err := f.Close(); err != nil {
-				return err
+			_, copyErr := io.Copy(f, tr)
+			closeErr := f.Close()
+			if copyErr != nil || closeErr != nil {
+				return errors.Join(copyErr, closeErr)
 			}
 			fmt.Fprintf(os.Stderr, "  extracted %s\n", name)
 		default:

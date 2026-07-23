@@ -71,7 +71,10 @@ func goSignerCallback(handle uintptr, input, output []byte) (int, bool) {
 	return n, true
 }
 
-func (s NativeSigner) Close() {
+func (s *NativeSigner) Close() {
+	if s == nil {
+		return
+	}
 	if s.ptr != nil {
 		c2paFree(s.ptr)
 		s.ptr = nil

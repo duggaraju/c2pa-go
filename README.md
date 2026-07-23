@@ -1,7 +1,7 @@
 # c2pa-go
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/duggaraju/c2pa-go/c2pa.svg)](https://pkg.go.dev/github.com/duggaraju/c2pa-go/c2pa)
-[![Go Report Card](https://goreportcard.com/badge/github.com/duggaraju/c2pa-go/c2pa)](https://goreportcard.com/report/github.com/duggaraju/c2pa-go/c2pa)
+[![CI](https://github.com/duggaraju/c2pa-go/actions/workflows/ci.yml/badge.svg)](https://github.com/duggaraju/c2pa-go/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![c2pa-rs](https://img.shields.io/badge/c2pa--rs-v0.90.1-orange?logo=rust)](https://github.com/contentauth/c2pa-rs)
 
@@ -133,6 +133,22 @@ a Go-side resolver wired up through `ContextBuilder.SetHttpResolver` — see
 [HTTP resolver](#http-resolver) below — if you want to control transport,
 proxy through a custom `http.Client`, inject test fixtures, or eventually
 build `libc2pa_c` without the `http` feature.
+
+### Linting locally
+
+The CI workflow runs `golangci-lint` on the Linux amd64 release build path.
+To reproduce that locally, install the same major/minor version and run it once
+per Go module:
+
+```sh
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
+
+cd c2pa
+CGO_ENABLED=1 golangci-lint run --build-tags=release ./...
+
+cd ../c2pa-cli
+CGO_ENABLED=1 golangci-lint run --build-tags=release ./...
+```
 
 ### Using prebuilt C libraries
 
