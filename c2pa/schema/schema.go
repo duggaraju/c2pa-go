@@ -978,8 +978,12 @@ type SignatureInfoClass struct {
 
 // Settings for configuring all aspects of c2pa-rs.
 //
-// [Settings::default] will be set thread-locally by default. Any settings set via
-// [Settings::from_toml] or [Settings::from_file] will also be thread-local.
+// [`Settings::default`] is used as the thread-local configuration by default.
+// Use [`Settings::new`] together with builder-style methods such as
+// [`with_toml`] to construct a configuration without modifying thread-local
+// state.
+//
+// [`with_toml`]: Settings::with_toml
 type Settings struct {
 	// Settings for configuring the [`Builder`].
 	//
