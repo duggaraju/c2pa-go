@@ -74,6 +74,8 @@ func main() {
 	readCmd := flag.NewFlagSet("read", flag.ExitOnError)
 	readIn := readCmd.String("i", "", "input file (required)")
 	readSettings := readCmd.String("s", "settings.toml", "settings file (TOML)")
+	readDetailed := readCmd.Bool("d", false, "print detailed JSON")
+	readCrJSON := readCmd.Bool("c", false, "print crJSON")
 
 	signCmd := flag.NewFlagSet("sign", flag.ExitOnError)
 	signIn := signCmd.String("i", "", "input file (required)")
@@ -91,12 +93,15 @@ func main() {
 		if *readIn == "" {
 			log.Fatalf("read: -i is required")
 		}
+		if *readDetailed && *readCrJSON {
+			log.Fatalf("read: -d and -c are mutually exclusive")
+		}
 		builder, err := createContextBuilder(*readSettings)
 		if err != nil {
 			log.Fatalf("failed to create context builder: %v", err)
 		}
 		defer builder.Close()
-		handleRead(builder, *readIn)
+		handleRead(builder, *readIn, *readDetailed, *readCrJSON)
 	case "sign":
 		if err := signCmd.Parse(os.Args[2:]); err != nil {
 			log.Fatal(err)
@@ -122,7 +127,7 @@ func main() {
 func usage() {
 	fmt.Fprintf(os.Stderr, "usage: %s <command> [options]\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "commands:")
-	fmt.Fprintln(os.Stderr, "  read  -i <file>           Read and print reader JSON")
+	fmt.Fprintln(os.Stderr, "  read  -i <file> [-d | -c] Read and print reader JSON")
 	fmt.Fprintln(os.Stderr, "  sign  -i <file> -o <file> [-m <manifest>]   Sign the input file (placeholder)")
 }
 
@@ -165,7 +170,7 @@ func createContextBuilder(settingsPath string) (*c2pa.ContextBuilder, error) {
 	return builder, nil
 }
 
-func handleRead(builder *c2pa.ContextBuilder, path string) {
+func handleRead(builder *c2pa.ContextBuilder, path string, detailed bool, crjson bool) {
 	ctx, err := builder.Build()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to build context: %v", err)
@@ -185,7 +190,14 @@ func handleRead(builder *c2pa.ContextBuilder, path string) {
 		return
 	}
 
-	json := r.Json()
+	var json string
+	if detailed {
+		json = r.DetailedJson()
+	} else if crjson {
+		json = r.CrJson()
+	} else {
+		json = r.Json()
+	}
 	fmt.Println(json)
 }
 

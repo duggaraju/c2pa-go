@@ -34,6 +34,18 @@ func (r *Reader) Json() string {
 	return c2paReaderJson(r.ptr)
 }
 
+func (r *Reader) CrJson() string {
+	return c2paReaderCrJson(r.ptr)
+}
+
+func (r *Reader) parseManifestStore(raw string) (*schema.ManifestStore, error) {
+	var out schema.ManifestStore
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // DetailedJson returns a detailed JSON description of the manifest store.
 func (r *Reader) DetailedJson() string {
 	return c2paReaderDetailedJson(r.ptr)
@@ -167,19 +179,17 @@ func NewReader(ctx *Context) (*Reader, error) {
 // Manifest returns the manifest store parsed into the typed schema.ManifestStore
 // representation.
 func (r *Reader) Manifest() (*schema.ManifestStore, error) {
-	var out schema.ManifestStore
-	if err := json.Unmarshal([]byte(r.Json()), &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
+	return r.parseManifestStore(r.Json())
+}
+
+// CrManifest returns the crJSON manifest store parsed into the typed
+// schema.ManifestStore representation.
+func (r *Reader) CrManifest() (*schema.ManifestStore, error) {
+	return r.parseManifestStore(r.CrJson())
 }
 
 // DetailedManifest returns the detailed manifest store parsed into the typed
 // schema.ManifestStore representation.
 func (r *Reader) DetailedManifest() (*schema.ManifestStore, error) {
-	var out schema.ManifestStore
-	if err := json.Unmarshal([]byte(r.DetailedJson()), &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
+	return r.parseManifestStore(r.DetailedJson())
 }

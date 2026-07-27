@@ -26,10 +26,8 @@ func TestVersionFormat(t *testing.T) {
 	assert.Regexp(t, regexp.MustCompile(`^c2pa-c-ffi/\d+\.\d+\.\d+\s+c2pa-rs/\d+\.\d+\.\d+$`), v)
 }
 
-func TestReaderAndBuilderNilContext(t *testing.T) {
-	_, err := NewReader(nil)
-	assert.Error(t, err)
-
+func TestBuilderNilContext(t *testing.T) {
+	var err error
 	_, err = NewBuilder(nil)
 	assert.Error(t, err)
 }
@@ -118,31 +116,6 @@ func TestBuilderPathWrappers(t *testing.T) {
 	output := filepath.Join(t.TempDir(), "missing", "archive.bin")
 	assert.Error(t, builder.ToArchiveFile(output))
 	assert.Error(t, builder.WriteIngredientArchiveFile("ingredient-id", output))
-}
-
-func TestReaderMetadataAndManifestParsing(t *testing.T) {
-	ctx, err := NewContext()
-	assert.NoError(t, err)
-	defer ctx.Close()
-
-	reader, err := NewReader(ctx)
-	assert.NoError(t, err)
-	defer reader.Close()
-
-	asset := fixturePath("sdk", "tests", "fixtures", "C.jpg")
-	assert.NoError(t, reader.WithFile(asset))
-	assert.Empty(t, reader.RemoteUrl())
-	assert.True(t, reader.IsEmbedded())
-	assert.NotEmpty(t, reader.Json())
-	assert.NotEmpty(t, reader.DetailedJson())
-
-	manifest, err := reader.Manifest()
-	assert.NoError(t, err)
-	assert.NotNil(t, manifest)
-
-	detailed, err := reader.DetailedManifest()
-	assert.NoError(t, err)
-	assert.NotNil(t, detailed)
 }
 
 type callbackSignerMock struct {

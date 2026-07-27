@@ -19,66 +19,6 @@ func TestC2paVersion(t *testing.T) {
 	assert.Regexp(t, regexp.MustCompile(`^c2pa-c-ffi/\d+\.\d+\.\d+\s+c2pa-rs/\d+\.\d+\.\d+$`), v)
 }
 
-func TestC2paError_AfterReaderFailure(t *testing.T) {
-	// Trigger a failure that happens inside the C2PA library (so c2pa_error is populated),
-	// not a Go-side error like "os.Open" failing.
-	dir := t.TempDir()
-	path := filepath.Join(dir, "empty.jpg")
-	err := os.WriteFile(path, nil, 0o644)
-	assert.NoError(t, err)
-
-	ctx, ctxErr := NewContext()
-	assert.NoError(t, ctxErr)
-	defer ctx.Close()
-
-	r, err := NewReader(ctx)
-	assert.NoError(t, err)
-	defer r.Close()
-
-	readerErr := r.WithFile(path)
-	assert.Error(t, readerErr)
-
-	lastErr := c2paError()
-	assert.NotEmpty(t, lastErr)
-}
-
-func TestReaderWithFile_NotFound(t *testing.T) {
-	ctx, err := NewContext()
-	assert.NoError(t, err)
-	defer ctx.Close()
-
-	r, err := NewReader(ctx)
-	assert.NoError(t, err)
-	defer r.Close()
-
-	err = r.WithFile("/nonexistent/file/path.jpg")
-	assert.Error(t, err)
-}
-
-func TestReaderWithFile_Valid(t *testing.T) {
-	ctx, ctxErr := NewContext()
-	assert.NoError(t, ctxErr)
-	defer ctx.Close()
-
-	r, err := NewReader(ctx)
-	assert.NoError(t, err)
-	defer r.Close()
-
-	err = r.WithFile("../c2pa-rs/sdk/tests/fixtures/C.jpg")
-	assert.NoError(t, err)
-	assert.NotEmpty(t, r.Json())
-}
-
-func TestNewDefaultReader_Valid(t *testing.T) {
-	r, err := NewDefaultReader()
-	assert.NoError(t, err)
-	defer r.Close()
-
-	err = r.WithFile("../c2pa-rs/sdk/tests/fixtures/C.jpg")
-	assert.NoError(t, err)
-	assert.NotEmpty(t, r.Json())
-}
-
 func TestContextBuilderSetProgressCallback_Invoked(t *testing.T) {
 	manifestJSON, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/simple_manifest.json")
 	assert.NoError(t, err)

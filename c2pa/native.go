@@ -216,6 +216,12 @@ func c2paReaderJson(r unsafe.Pointer) string {
 	return C.GoString(cs)
 }
 
+func c2paReaderCrJson(r unsafe.Pointer) string {
+	cs := C.c2pa_reader_crjson((*C.C2paReader)(r))
+	defer C.c2pa_free(unsafe.Pointer(cs))
+	return C.GoString(cs)
+}
+
 func c2paReaderDetailedJson(r unsafe.Pointer) string {
 	cs := C.c2pa_reader_detailed_json((*C.C2paReader)(r))
 	defer C.c2pa_free(unsafe.Pointer(cs))
