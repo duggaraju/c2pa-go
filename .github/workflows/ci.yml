@@ -91,7 +91,7 @@ jobs:
 
       - name: golangci-lint (c2pa)
         if: matrix.os == 'linux' && matrix.goarch == 'amd64'
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.5
           working-directory: c2pa
@@ -99,7 +99,7 @@ jobs:
 
       - name: golangci-lint (c2pa-cli)
         if: matrix.os == 'linux' && matrix.goarch == 'amd64'
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.5
           working-directory: c2pa-cli
