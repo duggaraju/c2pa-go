@@ -142,7 +142,14 @@ jobs:
           # Update prose like: "track c2pa-rs `0.84.x`".
           sed -i -E "s|track c2pa-rs \`[0-9]+\.[0-9]+\.x\`|track c2pa-rs \`${MAJOR_MINOR}.x\`|g" README.md
 
-          git add c2pa-rs README.md
+          # Keep the CLI dependency and workspace replacement aligned with the target release.
+          sed -i -E "s|(require github.com/duggaraju/c2pa-go/c2pa )v[0-9]+\.[0-9]+\.[0-9]+|\1v${VERSION}|" c2pa-cli/go.mod
+          sed -i -E "s|(replace github.com/duggaraju/c2pa-go/c2pa )v[0-9]+\.[0-9]+\.[0-9]+( => ./c2pa)|\1v${VERSION}\2|" go.work
+
+          grep -Fx "require github.com/duggaraju/c2pa-go/c2pa v${VERSION}" c2pa-cli/go.mod
+          grep -Fx "replace github.com/duggaraju/c2pa-go/c2pa v${VERSION} => ./c2pa" go.work
+
+          git add c2pa-rs README.md go.work c2pa-cli/go.mod
 
           if git diff --cached --quiet; then
             echo "No changes to commit"
