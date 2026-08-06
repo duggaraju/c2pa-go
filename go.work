@@ -5,4 +5,4 @@ use (
 	./c2pa-cli
 )
 
-replace github.com/duggaraju/c2pa-go/c2pa v0.90.5 => ./c2pa
+replace github.com/duggaraju/c2pa-go/c2pa v0.90.6 => ./c2pa
