@@ -24,9 +24,8 @@ produced by the `c2pa_c_ffi` crate.
 - Supported platforms (CI-built):
   - Linux amd64, Linux arm64
   - macOS amd64 (Intel), macOS arm64 (Apple Silicon)
-  - Windows amd64 (mingw / gcc toolchain via cgo)
-  - Windows arm64: temporarily disabled in CI while the
-    `aarch64-pc-windows-gnullvm` toolchain story is sorted out.
+  - Windows amd64 (MinGW-w64 / GCC toolchain via cgo)
+  - Windows arm64 (LLVM / MinGW-w64 toolchain via cgo)
 - Bindings are not yet API-stable; the surface may change before a tagged
   release.
 
