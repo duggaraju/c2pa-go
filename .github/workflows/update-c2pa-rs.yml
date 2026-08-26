@@ -111,6 +111,29 @@ jobs:
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Set up Go
+        if: steps.check.outputs.needed == 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.25.x'
+          cache-dependency-path: |
+            c2pa/go.sum
+            c2pa-cli/go.sum
+
+      - name: Set up Rust
+        if: steps.check.outputs.needed == 'true'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+          cache-workspaces: c2pa-rs
+
+      - name: Set up Node.js (for quicktype schema generation)
+        if: steps.check.outputs.needed == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
       - name: Update submodule
         id: update
         if: steps.check.outputs.needed == 'true'
@@ -152,7 +175,10 @@ jobs:
           grep -Fx "require github.com/duggaraju/c2pa-go/c2pa v${VERSION}" c2pa-cli/go.mod
           grep -Fx "replace github.com/duggaraju/c2pa-go/c2pa v${VERSION} => ./c2pa" go.work
 
-          git add c2pa-rs README.md go.work c2pa-cli/go.mod
+          # Regenerate the checked-in schema types from the new c2pa-rs revision.
+          go generate ./c2pa/schema/...
+
+          git add c2pa-rs README.md go.work c2pa-cli/go.mod c2pa/schema/schema.go
 
           if git diff --cached --quiet; then
             echo "No changes to commit"
@@ -185,7 +211,7 @@ jobs:
 
             ### Changes
 
-            This automated update tracks the upstream c2pa-rs C FFI releases to keep the Go bindings up-to-date. The README badge and version references have been updated to match.
+            This automated update tracks the upstream c2pa-rs C FFI releases to keep the Go bindings up-to-date. The README badge and version references have been updated to match, and the checked-in \`c2pa/schema/schema.go\` has been regenerated from the new c2pa-rs revision.
 
             ### Checklist
 

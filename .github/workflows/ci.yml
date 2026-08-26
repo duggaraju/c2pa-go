@@ -89,6 +89,10 @@ jobs:
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_AR: llvm-ar
         run: go generate -tags=release ./c2pa/...
 
+      - name: Verify generated schema is up to date
+        if: matrix.os == 'linux' && matrix.goarch == 'amd64'
+        run: git diff --exit-code -- c2pa/schema/schema.go
+
       - name: golangci-lint (c2pa)
         if: matrix.os == 'linux' && matrix.goarch == 'amd64'
         uses: golangci/golangci-lint-action@v9
