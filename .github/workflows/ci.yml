@@ -73,6 +73,7 @@ jobs:
         # release flavor via the go:generate directives in c2pa/generate*.go.
         env:
           CGO_ENABLED: '1'
+          RUSTFLAGS: '-A unused-imports'
         run: go generate -tags=release ./c2pa/...
 
       - name: Run go generate (release, windows arm64)
@@ -85,6 +86,7 @@ jobs:
           CC: clang
           CXX: clang++
           AR: llvm-ar
+          RUSTFLAGS: '-A unused-imports'
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER: clang
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_AR: llvm-ar
         run: go generate -tags=release ./c2pa/...

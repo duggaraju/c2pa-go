@@ -134,34 +134,50 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Update submodule
+      - name: Prepare update metadata
         id: update
         if: steps.check.outputs.needed == 'true'
+        env:
+          TARGET_TAG: ${{ steps.target.outputs.tag }}
         run: |
           set -euo pipefail
-          TARGET_TAG="${{ steps.target.outputs.tag }}"
           BRANCH_NAME="bot/update-c2pa-rs-${TARGET_TAG}"
-          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
+          VERSION=${TARGET_TAG#c2pa-c-ffi-v}
+
+          echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare update branch
+        if: steps.check.outputs.needed == 'true'
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BRANCH_NAME: ${{ steps.update.outputs.branch }}
+        run: |
+          set -euo pipefail
           if [ -z "$DEFAULT_BRANCH" ]; then
             DEFAULT_BRANCH="main"
           fi
-
-          echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
 
           # Reset the bot branch from the default branch to avoid non-fast-forward push issues.
           git fetch origin "$DEFAULT_BRANCH"
           git checkout -B "$BRANCH_NAME" "origin/$DEFAULT_BRANCH"
 
-          # Move the submodule to the target tag.
-          cd c2pa-rs
-          git fetch --tags --force origin
-          git checkout "$TARGET_TAG"
-          cd ..
+      - name: Update submodule
+        if: steps.check.outputs.needed == 'true'
+        env:
+          TARGET_TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git -C c2pa-rs fetch --tags --force origin
+          git -C c2pa-rs checkout "$TARGET_TAG"
 
-          # Extract version number from tag (e.g., c2pa-c-ffi-v0.76.0 -> 0.76.0).
-          VERSION=$(echo "$TARGET_TAG" | sed 's/^c2pa-c-ffi-v//')
+      - name: Update version references
+        if: steps.check.outputs.needed == 'true'
+        env:
+          VERSION: ${{ steps.update.outputs.version }}
+        run: |
+          set -euo pipefail
           MAJOR_MINOR=$(echo "$VERSION" | awk -F. '{print $1"."$2}')
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
           # Update the c2pa-rs shields.io badge in README.md.
           sed -i -E "s|c2pa--rs-v[0-9]+\.[0-9]+\.[0-9]+-orange|c2pa--rs-v${VERSION}-orange|g" README.md
@@ -175,9 +191,21 @@ jobs:
           grep -Fx "require github.com/duggaraju/c2pa-go/c2pa v${VERSION}" c2pa-cli/go.mod
           grep -Fx "replace github.com/duggaraju/c2pa-go/c2pa v${VERSION} => ./c2pa" go.work
 
-          # Regenerate the checked-in schema types from the new c2pa-rs revision.
+      - name: Regenerate schema
+        if: steps.check.outputs.needed == 'true'
+        env:
+          RUSTFLAGS: '-A unused-imports'
+        run: |
+          set -euo pipefail
           go generate ./c2pa/schema/...
 
+      - name: Commit and push update
+        if: steps.check.outputs.needed == 'true'
+        env:
+          BRANCH_NAME: ${{ steps.update.outputs.branch }}
+          TARGET_TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
           git add c2pa-rs README.md go.work c2pa-cli/go.mod c2pa/schema/schema.go
 
           if git diff --cached --quiet; then
