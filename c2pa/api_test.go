@@ -13,7 +13,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+// Leave actions to IntentEdit so the SDK links c2pa.opened to the source asset's
+// parent ingredient instead of using the unlinked action in simple_manifest.json.
+const signingManifestJSON = `{
+	"claim_generator_info": [{"name": "c2pa-go tests", "version": "1.0"}]
+}`
 
 func fixturePath(parts ...string) string {
 	all := append([]string{"..", "c2pa-rs"}, parts...)
@@ -222,17 +229,14 @@ func TestSignerGuards(t *testing.T) {
 }
 
 func TestBuilderSignWrapper(t *testing.T) {
-	manifestJSON, err := os.ReadFile(fixturePath("sdk", "tests", "fixtures", "simple_manifest.json"))
-	assert.NoError(t, err)
-
 	signCert, err := os.ReadFile(fixturePath("sdk", "tests", "fixtures", "certs", "ps256.pub"))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	privateKey, err := os.ReadFile(fixturePath("sdk", "tests", "fixtures", "certs", "ps256.pem"))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ctxBuilder, err := NewContextBuilder()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer ctxBuilder.Close()
 
 	err = ctxBuilder.SetSignerInfo(SignerInfo{
@@ -240,27 +244,28 @@ func TestBuilderSignWrapper(t *testing.T) {
 		SignCert:   string(signCert),
 		PrivateKey: string(privateKey),
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ctx, err := ctxBuilder.Build()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer ctx.Close()
 
 	builder, err := NewBuilder(ctx)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer builder.Close()
 
-	builder, err = builder.WithDefinition(string(manifestJSON))
-	assert.NoError(t, err)
+	builder, err = builder.WithDefinition(signingManifestJSON)
+	require.NoError(t, err)
+	require.NoError(t, builder.SetIntent(IntentEdit, SourceEmpty))
 
 	input := fixturePath("sdk", "tests", "fixtures", "C.jpg")
 	output := filepath.Join(t.TempDir(), "signed.jpg")
 
 	manifest, err := builder.Sign(input, output, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotEmpty(t, manifest)
 
 	info, err := os.Stat(output)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Greater(t, info.Size(), int64(0))
 }
