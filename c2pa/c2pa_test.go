@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestC2paVersion(t *testing.T) {
@@ -20,17 +21,14 @@ func TestC2paVersion(t *testing.T) {
 }
 
 func TestContextBuilderSetProgressCallback_Invoked(t *testing.T) {
-	manifestJSON, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/simple_manifest.json")
-	assert.NoError(t, err)
-
 	signCert, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pub")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	privateKey, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pem")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ctxBuilder, err := NewContextBuilder()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer ctxBuilder.Close()
 
 	var callbacks atomic.Int32
@@ -38,31 +36,32 @@ func TestContextBuilderSetProgressCallback_Invoked(t *testing.T) {
 		callbacks.Add(1)
 		return true
 	}))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	err = ctxBuilder.SetSignerInfo(SignerInfo{
 		Alg:        "ps256",
 		SignCert:   string(signCert),
 		PrivateKey: string(privateKey),
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ctx, err := ctxBuilder.Build()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer ctx.Close()
 
 	b, err := NewBuilder(ctx)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer b.Close()
 
-	b, err = b.WithDefinition(string(manifestJSON))
-	assert.NoError(t, err)
+	b, err = b.WithDefinition(signingManifestJSON)
+	require.NoError(t, err)
+	require.NoError(t, b.SetIntent(IntentEdit, SourceEmpty))
 
 	input := "../c2pa-rs/sdk/tests/fixtures/C.jpg"
 	output := filepath.Join(t.TempDir(), "signed.jpg")
 
 	_, err = b.SignWithContext(input, output)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Greater(t, callbacks.Load(), int32(0))
 }
 
@@ -123,17 +122,14 @@ func TestNewIdentitySigner(t *testing.T) {
 }
 
 func TestBuilderSignWithContext_Valid(t *testing.T) {
-	manifestJSON, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/simple_manifest.json")
-	assert.NoError(t, err)
-
 	signCert, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pub")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	privateKey, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pem")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ctxBuilder, err := NewContextBuilder()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer ctxBuilder.Close()
 
 	err = ctxBuilder.SetSignerInfo(SignerInfo{
@@ -141,42 +137,48 @@ func TestBuilderSignWithContext_Valid(t *testing.T) {
 		SignCert:   string(signCert),
 		PrivateKey: string(privateKey),
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ctx, err := ctxBuilder.Build()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer ctx.Close()
 
 	b, err := NewBuilder(ctx)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer b.Close()
 
-	b, err = b.WithDefinition(string(manifestJSON))
-	assert.NoError(t, err)
+	b, err = b.WithDefinition(signingManifestJSON)
+	require.NoError(t, err)
+	require.NoError(t, b.SetIntent(IntentEdit, SourceEmpty))
 
 	input := "../c2pa-rs/sdk/tests/fixtures/C.jpg"
 	output := filepath.Join(t.TempDir(), "signed.jpg")
 
 	manifest, err := b.SignWithContext(input, output)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotEmpty(t, manifest)
 
 	info, err := os.Stat(output)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Greater(t, info.Size(), int64(0))
 
 	r, err := NewReader(ctx)
-	assert.NoError(t, err)
-	if r != nil {
-		defer r.Close()
-		f, openErr := os.Open(output)
-		assert.NoError(t, openErr)
-		if f != nil {
-			defer func() {
-				assert.NoError(t, f.Close())
-			}()
-			assert.NoError(t, r.WithStream("jpg", f))
-		}
-		assert.NotEmpty(t, r.Json())
-	}
+	require.NoError(t, err)
+	defer r.Close()
+	f, err := os.Open(output)
+	require.NoError(t, err)
+	defer func() {
+		assert.NoError(t, f.Close())
+	}()
+	require.NoError(t, r.WithStream("jpg", f))
+
+	store, err := r.Manifest()
+	require.NoError(t, err)
+	require.NotNil(t, store.ActiveManifest)
+	active, ok := store.Manifests[*store.ActiveManifest]
+	require.True(t, ok)
+	require.Len(t, active.Ingredients, 1)
+	require.NotNil(t, active.Ingredients[0].Relationship)
+	assert.Equal(t, "parentOf", string(*active.Ingredients[0].Relationship))
+	assert.NotEmpty(t, active.Assertions)
 }
