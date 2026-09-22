@@ -406,32 +406,6 @@ func c2paBuilderPlaceholder(b unsafe.Pointer, format string) ([]byte, int64) {
 	return takeCBytes(unsafe.Pointer(bytesPtr), int64(n)), int64(n)
 }
 
-func c2paBuilderDataHashedPlaceholder(b unsafe.Pointer, reservedSize uintptr, format string) ([]byte, int64) {
-	cformat := C.CString(format)
-	defer C.free(unsafe.Pointer(cformat))
-	var bytesPtr *C.uchar
-	n := C.c2pa_builder_data_hashed_placeholder((*C.C2paBuilder)(b), C.uintptr_t(reservedSize), cformat, &bytesPtr)
-	if n < 0 {
-		return nil, int64(n)
-	}
-	return takeCBytes(unsafe.Pointer(bytesPtr), int64(n)), int64(n)
-}
-
-func c2paBuilderSignDataHashedEmbeddable(b, signer unsafe.Pointer, dataHashJson, format string, asset unsafe.Pointer) ([]byte, int64) {
-	cdh := C.CString(dataHashJson)
-	defer C.free(unsafe.Pointer(cdh))
-	cformat := C.CString(format)
-	defer C.free(unsafe.Pointer(cformat))
-	var bytesPtr *C.uchar
-	n := C.c2pa_builder_sign_data_hashed_embeddable(
-		(*C.C2paBuilder)(b), (*C.C2paSigner)(signer), cdh, cformat,
-		(*C.C2paStream)(asset), &bytesPtr)
-	if n < 0 {
-		return nil, int64(n)
-	}
-	return takeCBytes(unsafe.Pointer(bytesPtr), int64(n)), int64(n)
-}
-
 func c2paBuilderSignEmbeddable(b unsafe.Pointer, format string) ([]byte, int64) {
 	cformat := C.CString(format)
 	defer C.free(unsafe.Pointer(cformat))
@@ -471,7 +445,7 @@ func c2paBuilderUpdateHashFromStream(b unsafe.Pointer, format string, stream uns
 	return int(C.c2pa_builder_update_hash_from_stream((*C.C2paBuilder)(b), cformat, (*C.C2paStream)(stream)))
 }
 
-func c2paFormatEmbeddable(format string, manifestBytes []byte) ([]byte, int64) {
+func c2paBuilderComposeManifest(b unsafe.Pointer, format string, manifestBytes []byte) ([]byte, int64) {
 	cformat := C.CString(format)
 	defer C.free(unsafe.Pointer(cformat))
 	var inPtr *C.uchar
@@ -479,7 +453,8 @@ func c2paFormatEmbeddable(format string, manifestBytes []byte) ([]byte, int64) {
 		inPtr = (*C.uchar)(unsafe.Pointer(&manifestBytes[0]))
 	}
 	var outPtr *C.uchar
-	n := C.c2pa_format_embeddable(cformat, inPtr, C.uintptr_t(len(manifestBytes)), &outPtr)
+	n := C.c2pa_builder_compose_manifest(
+		(*C.C2paBuilder)(b), cformat, inPtr, C.uintptr_t(len(manifestBytes)), &outPtr)
 	if n < 0 {
 		return nil, int64(n)
 	}
@@ -533,6 +508,17 @@ func c2paIdentitySignerCreate(c2paSigner, identitySigner unsafe.Pointer, referen
 	defer freeRoles()
 	return unsafe.Pointer(C.c2pa_identity_signer_create(
 		(*C.C2paSigner)(c2paSigner), (*C.C2paSigner)(identitySigner), crefs, rolesPtr))
+}
+
+func c2paIdentitySignerCreateWithCredentialHolder(c2paSigner unsafe.Pointer, sigType string, reserveSize, handle uintptr, referencedAssertions, roles []string) unsafe.Pointer {
+	cSigType := C.CString(sigType)
+	defer C.free(unsafe.Pointer(cSigType))
+	crefs, freeRefs := cStringArray(referencedAssertions)
+	defer freeRefs()
+	rolesPtr, freeRoles := cStringArray(roles)
+	defer freeRoles()
+	return unsafe.Pointer(C.create_identity_signer_with_credential_holder(
+		(*C.C2paSigner)(c2paSigner), cSigType, C.uintptr_t(reserveSize), C.uintptr_t(handle), crefs, rolesPtr))
 }
 
 func c2paEd25519Sign(input []byte, privateKey string) []byte {
@@ -610,6 +596,17 @@ func signerCallback(context C.uintptr_t, input *C.uint8_t, inputSize C.uintptr_t
 	in := unsafe.Slice((*byte)(unsafe.Pointer(input)), int(inputSize))
 	out := unsafe.Slice((*byte)(unsafe.Pointer(output)), int(outputSize))
 	n, ok := goSignerCallback(uintptr(context), in, out)
+	if !ok {
+		return C.intptr_t(-1)
+	}
+	return C.intptr_t(n)
+}
+
+//export credentialHolderCallback
+func credentialHolderCallback(context C.uintptr_t, input *C.uint8_t, inputSize C.uintptr_t, output *C.uint8_t, outputSize C.uintptr_t) C.intptr_t {
+	in := unsafe.Slice((*byte)(unsafe.Pointer(input)), int(inputSize))
+	out := unsafe.Slice((*byte)(unsafe.Pointer(output)), int(outputSize))
+	n, ok := goCredentialHolderCallback(uintptr(context), in, out)
 	if !ok {
 		return C.intptr_t(-1)
 	}

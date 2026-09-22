@@ -32,6 +32,18 @@ WEAK C2paSigner* create_signer(uintptr_t context, C2paSigningAlg alg, const char
     return c2pa_signer_create((const void*)context, (SignerCallback)signer_callback, alg, certificates, tsa_url);
 }
 
+extern CGO_EXPORT intptr_t credentialHolderCallback(uintptr_t context, uint8_t* input, uintptr_t input_size, uint8_t* output, uintptr_t output_size);
+
+WEAK intptr_t credential_holder_callback(const void* context, const uint8_t* input, uintptr_t input_size, uint8_t* output, uintptr_t output_size)
+{
+	return credentialHolderCallback((uintptr_t)context, (uint8_t*)input, input_size, output, output_size);
+}
+
+WEAK C2paSigner* create_identity_signer_with_credential_holder(C2paSigner* signer, const char* sig_type, uintptr_t reserve_size, uintptr_t context, const char* const* referenced_assertions, const char* const* roles)
+{
+	return c2pa_identity_signer_create_with_credential_holder(signer, sig_type, reserve_size, (const void*)context, (CredentialHolderCallback)credential_holder_callback, referenced_assertions, roles);
+}
+
 extern CGO_EXPORT intptr_t streamRead(uintptr_t context, uint8_t *buffer, intptr_t size);
 WEAK intptr_t stream_read(StreamContext *context, uint8_t *buffer, intptr_t size) {
 

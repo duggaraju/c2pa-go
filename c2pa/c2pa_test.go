@@ -7,12 +7,24 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/cgo"
 	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type testCredentialHolder struct {
+	written int
+}
+
+func (h *testCredentialHolder) SignatureType() string { return "cawg.identity_claims_aggregation" }
+func (h *testCredentialHolder) ReserveSize() int      { return 1024 }
+func (h *testCredentialHolder) Sign(_ []byte, output []byte) (int, error) {
+	copy(output, []byte("credential"))
+	return h.written, nil
+}
 
 func TestC2paVersion(t *testing.T) {
 	v := Version()
@@ -119,6 +131,38 @@ func TestNewIdentitySigner(t *testing.T) {
 		assert.NoError(t, reserveErr)
 		assert.Greater(t, size, int64(0))
 	}
+}
+
+func TestNewIdentitySignerWithCredentialHolder(t *testing.T) {
+	signCert, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pub")
+	require.NoError(t, err)
+
+	privateKey, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pem")
+	require.NoError(t, err)
+
+	claimSigner, err := NewSignerFromInfo(SignerInfo{
+		Alg:        "ps256",
+		SignCert:   string(signCert),
+		PrivateKey: string(privateKey),
+	})
+	require.NoError(t, err)
+
+	signer, err := NewIdentitySignerWithCredentialHolder(
+		claimSigner, &testCredentialHolder{written: len("credential")}, []string{"c2pa.actions"}, []string{"author"})
+	require.NoError(t, err)
+	defer signer.(*identitySigner).Close()
+
+	size, err := signer.(*identitySigner).ReserveSize()
+	require.NoError(t, err)
+	assert.Greater(t, size, int64(0))
+}
+
+func TestCredentialHolderCallbackRejectsOversizedResult(t *testing.T) {
+	handle := cgo.NewHandle(&credentialHolderAdapter{holder: &testCredentialHolder{written: 5}})
+	defer handle.Delete()
+
+	_, ok := goCredentialHolderCallback(uintptr(handle), []byte("payload"), make([]byte, 4))
+	assert.False(t, ok)
 }
 
 func TestBuilderSignWithContext_Valid(t *testing.T) {

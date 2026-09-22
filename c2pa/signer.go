@@ -19,6 +19,15 @@ type CallbackSigner interface {
 	Sign(input []byte, output []byte) (int, error)
 }
 
+// CredentialHolder produces the signature field for a callback-backed CAWG
+// identity assertion. Sign receives the CBOR signer payload and an output
+// buffer whose length is ReserveSize.
+type CredentialHolder interface {
+	SignatureType() string
+	ReserveSize() int
+	Sign(input []byte, output []byte) (int, error)
+}
+
 // nativeBackedSigner is implemented by Signer implementations that already
 // own a native C2PA signer and can transfer ownership to the caller.
 type nativeBackedSigner interface {
@@ -58,6 +67,10 @@ type identitySigner struct {
 	native   *NativeSigner
 }
 
+type credentialHolderAdapter struct {
+	holder CredentialHolder
+}
+
 // goSignerCallback is invoked from the cgo signerCallback in native.go.
 func goSignerCallback(handle uintptr, input, output []byte) (int, bool) {
 	adapter, ok := cgo.Handle(handle).Value().(*NativeSigner)
@@ -66,6 +79,18 @@ func goSignerCallback(handle uintptr, input, output []byte) (int, bool) {
 	}
 	n, err := adapter.signer.Sign(input, output)
 	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+func goCredentialHolderCallback(handle uintptr, input, output []byte) (int, bool) {
+	adapter, ok := cgo.Handle(handle).Value().(*credentialHolderAdapter)
+	if !ok || adapter == nil || adapter.holder == nil {
+		return 0, false
+	}
+	n, err := adapter.holder.Sign(input, output)
+	if err != nil || n < 0 || n > len(output) {
 		return 0, false
 	}
 	return n, true
@@ -123,8 +148,8 @@ func nativeSignerFromInfo(info SignerInfo) (*NativeSigner, error) {
 }
 
 // NewSignerFromInfo creates a native-backed Signer from certificate/private-key
-// material. The returned signer can be passed directly to SetSigner or
-// NewIdentitySigner.
+// material. The returned signer can be passed directly to SetSigner,
+// NewIdentitySigner, or NewIdentitySignerWithCredentialHolder.
 func NewSignerFromInfo(info SignerInfo) (Signer, error) {
 	native, err := nativeSignerFromInfo(info)
 	if err != nil {
@@ -168,6 +193,32 @@ func NewIdentitySigner(c2paSigner Signer, idSigner Signer, referencedAssertions 
 	return &identitySigner{claim: c2paSigner, identity: idSigner, native: native}, nil
 }
 
+// NewIdentitySignerWithCredentialHolder adds a callback-backed CAWG identity
+// assertion to a C2PA claim signer. The holder remains reachable until the
+// returned signer is closed or transferred to a ContextBuilder.
+func NewIdentitySignerWithCredentialHolder(c2paSigner Signer, holder CredentialHolder, referencedAssertions []string, roles []string) (Signer, error) {
+	if holder == nil {
+		return nil, fmt.Errorf("credential holder is nil")
+	}
+	if holder.SignatureType() == "" {
+		return nil, fmt.Errorf("credential holder signature type is empty")
+	}
+	if holder.ReserveSize() <= 0 {
+		return nil, fmt.Errorf("credential holder reserve size must be positive")
+	}
+
+	claim, err := takeNativeSigner(c2paSigner)
+	if err != nil {
+		return nil, err
+	}
+	native, err := newIdentitySignerWithCredentialHolder(claim, holder, referencedAssertions, roles)
+	if err != nil {
+		claim.Close()
+		return nil, err
+	}
+	return &identitySigner{claim: c2paSigner, native: native}, nil
+}
+
 // NewIdentitySigner combines two native signers into a single signer that
 // emits both the C2PA claim signature and an X.509 identity assertion.
 // On success, ownership of both input signers transfers to the returned signer.
@@ -191,6 +242,27 @@ func newIdentitySigner(c2paSigner *NativeSigner, identitySigner *NativeSigner, r
 	c2paSigner.handles = nil
 	identitySigner.ptr = nil
 	identitySigner.handles = nil
+
+	return &NativeSigner{ptr: ptr, handles: handles}, nil
+}
+
+func newIdentitySignerWithCredentialHolder(c2paSigner *NativeSigner, holder CredentialHolder, referencedAssertions []string, roles []string) (*NativeSigner, error) {
+	if c2paSigner == nil || c2paSigner.ptr == nil {
+		return nil, fmt.Errorf("c2pa signer is nil")
+	}
+
+	handle := cgo.NewHandle(&credentialHolderAdapter{holder: holder})
+	ptr := c2paIdentitySignerCreateWithCredentialHolder(
+		c2paSigner.ptr, holder.SignatureType(), uintptr(holder.ReserveSize()), uintptr(handle), referencedAssertions, roles)
+	if ptr == nil {
+		handle.Delete()
+		return nil, fmt.Errorf("failed to create identity signer with credential holder: %s", c2paError())
+	}
+
+	handles := append([]cgo.Handle{}, c2paSigner.handles...)
+	handles = append(handles, handle)
+	c2paSigner.ptr = nil
+	c2paSigner.handles = nil
 
 	return &NativeSigner{ptr: ptr, handles: handles}, nil
 }

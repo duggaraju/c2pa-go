@@ -36,13 +36,18 @@
 // Implement the [CallbackSigner] interface (or use a native-backed [Signer])
 // and drive [Builder.Sign]:
 //
-//	b, err := c2pa.BuilderFromJson(ctx, manifestJson)
+//	b, err := c2pa.NewBuilder(ctx)
+//	if err != nil { ... }
+//	b, err = b.WithDefinition(manifestJson)
 //	if err != nil { ... }
 //	defer b.Close()
 //	manifest, err := b.Sign("in.jpg", "out.jpg", signer)
 //
-// The [Builder] type mirrors the upstream API, including SetIntent,
-// SetRemoteUrl, AddAction, AddResource, AddIngredient, and archive helpers.
+// The [Builder] type mirrors the upstream API, including embeddable workflows
+// through [Builder.ComposeManifest], [Builder.Placeholder], and
+// [Builder.SignEmbeddable]. CAWG identity assertions can use either an X.509
+// identity signer through [NewIdentitySigner] or a callback-backed
+// [CredentialHolder] through [NewIdentitySignerWithCredentialHolder].
 //
 // # Linking
 //

@@ -285,7 +285,10 @@ manifestJson := `{
   "title": "example.jpg"
 }`
 
-builder, err := c2pa.BuilderFromJson(ctx, manifestJson)
+builder, err := c2pa.NewBuilder(ctx)
+if err != nil { log.Fatal(err) }
+
+builder, err = builder.WithDefinition(manifestJson)
 if err != nil { log.Fatal(err) }
 defer builder.Close()
 
@@ -325,6 +328,31 @@ func (s *MyPs256Signer) Sign(input, output []byte) (int, error) {
 The certificate PEM bundle (leaf first, then intermediates) is what
 c2pa-rs embeds in the COSE `x5chain` header.
 
+### CAWG identity signers
+
+`NewIdentitySigner` combines a claim signer with a second signer that produces
+an X.509 CAWG identity assertion. For other credential types, implement
+`CredentialHolder` and use `NewIdentitySignerWithCredentialHolder` instead:
+
+```go
+type CredentialHolder interface {
+    SignatureType() string
+    ReserveSize() int
+    Sign(input, output []byte) (int, error)
+}
+
+signer, err := c2pa.NewIdentitySignerWithCredentialHolder(
+    claimSigner,
+    holder,
+    []string{"c2pa.actions"},
+    []string{"author"},
+)
+```
+
+The holder receives the CBOR signer payload after referenced assertion hashes
+are final. Its `Sign` method may be called more than once and must not write
+more than `ReserveSize` bytes.
+
 ### Builder helpers
 
 Beyond `Sign`, `Builder` exposes most of the upstream API:
@@ -338,6 +366,18 @@ builder.AddResourceFromFile("thumbnail", "thumb.jpg")
 builder.AddIngredientFromFile(`{"title":"parent"}`, "parent.jpg")
 builder.ToArchiveFile("manifest.c2pa")
 ```
+
+For custom embedding workflows, `Builder.ComposeManifest` converts raw
+`application/c2pa` manifest bytes into format-specific bytes using the asset
+handlers registered on the builder's `Context`:
+
+```go
+embeddable, err := builder.ComposeManifest("image/jpeg", manifestBytes)
+```
+
+The lower-level embeddable signing workflow is exposed through
+`NeedsPlaceholder`, `Placeholder`, `SetDataHashExclusions`,
+`UpdateHashFromStream`, and `SignEmbeddable`.
 
 ### Reader helpers
 
@@ -389,7 +429,7 @@ type HttpResolver interface {
 ```
 
 The resolver is invoked synchronously from c2pa-rs; return errors normally
-and they are surfaced through the usual `C2paError()` channel. Installing
+and they are surfaced through the calling Go API. Installing
 a resolver fully replaces the bundled reqwest client for the lifetime of
 the `Context`.
 
@@ -411,8 +451,8 @@ import (
 
 #### Typed manifest definition
 
-`BuilderFromDefinition` accepts a `*schema.ManifestDefinition` and marshals it
-internally before handing it to c2pa-rs:
+`Builder.WithManifestDefinition` accepts a `*schema.ManifestDefinition` and
+marshals it internally before handing it to c2pa-rs:
 
 ```go
 title := "example.jpg"
@@ -435,7 +475,10 @@ def := &schema.ManifestDefinition{
     }},
 }
 
-builder, err := c2pa.BuilderFromDefinition(ctx, def)
+builder, err := c2pa.NewBuilder(ctx)
+if err != nil { log.Fatal(err) }
+
+builder, err = builder.WithManifestDefinition(def)
 if err != nil { log.Fatal(err) }
 defer builder.Close()
 

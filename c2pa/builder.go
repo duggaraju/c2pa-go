@@ -274,8 +274,8 @@ func (b *Builder) WithDefinition(json string) (*Builder, error) {
 	return b, nil
 }
 
-// BuilderFromArchive creates a Builder from an archive previously produced by
-// ToArchive, using the supplied Context.
+// FromArchive configures the Builder from an archive previously produced by
+// ToArchive.
 func (b *Builder) FromArchive(file *os.File) (*Builder, error) {
 	stream, err := NewStream(file)
 	if err != nil {
@@ -292,7 +292,7 @@ func (b *Builder) FromArchive(file *os.File) (*Builder, error) {
 	return b, nil
 }
 
-// BuilderFromArchiveFile is a convenience wrapper around BuilderFromArchive.
+// FromArchiveFile is a convenience wrapper around FromArchive.
 func (b *Builder) FromArchiveFile(path string) (_ *Builder, err error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -302,8 +302,9 @@ func (b *Builder) FromArchiveFile(path string) (_ *Builder, err error) {
 	return b.FromArchive(f)
 }
 
-// BuilderFromDefinition creates a Builder from a typed ManifestDefinition.
-// It marshals the definition to JSON and forwards it to BuilderFromJson.
+// WithManifestDefinition configures the Builder from a typed
+// ManifestDefinition by marshaling it to JSON and forwarding it to
+// WithDefinition.
 func (b *Builder) WithManifestDefinition(def *schema.ManifestDefinition) (*Builder, error) {
 	data, err := json.Marshal(def)
 	if err != nil {
@@ -358,43 +359,6 @@ func (b *Builder) Placeholder(format string) ([]byte, error) {
 	out, n := c2paBuilderPlaceholder(b.ptr, format)
 	if n < 0 {
 		return nil, fmt.Errorf("failed to create placeholder: %s", c2paError())
-	}
-	return out, nil
-}
-
-// DataHashedPlaceholder reserves reservedSize bytes for a signature and
-// returns the resulting placeholder manifest bytes.
-func (b *Builder) DataHashedPlaceholder(reservedSize int, format string) ([]byte, error) {
-	out, n := c2paBuilderDataHashedPlaceholder(b.ptr, uintptr(reservedSize), format)
-	if n < 0 {
-		return nil, fmt.Errorf("failed to create data-hashed placeholder: %s", c2paError())
-	}
-	return out, nil
-}
-
-// SignDataHashedEmbeddable signs the manifest using the supplied signer and a
-// pre-computed data hash JSON. asset may be nil if the hash JSON already
-// contains the computed hash values.
-func (b *Builder) SignDataHashedEmbeddable(signer Signer, dataHashJson string, format string, asset *os.File) ([]byte, error) {
-	native, err := takeNativeSigner(signer)
-	if err != nil {
-		return nil, err
-	}
-	defer native.Close()
-
-	var assetPtr unsafe.Pointer
-	if asset != nil {
-		s, err := NewStream(asset)
-		if err != nil {
-			return nil, err
-		}
-		defer s.Close()
-		assetPtr = s.ptr
-	}
-
-	out, n := c2paBuilderSignDataHashedEmbeddable(b.ptr, native.ptr, dataHashJson, format, assetPtr)
-	if n < 0 {
-		return nil, fmt.Errorf("failed to sign data hashed embeddable: %s", c2paError())
 	}
 	return out, nil
 }
@@ -458,12 +422,13 @@ func (b *Builder) UpdateHashFromStream(format string, file *os.File) error {
 	return nil
 }
 
-// FormatEmbeddable converts a raw application/c2pa manifest into an
-// embeddable byte sequence for the given asset format.
-func FormatEmbeddable(format string, manifestBytes []byte) ([]byte, error) {
-	out, n := c2paFormatEmbeddable(format, manifestBytes)
+// ComposeManifest converts a raw application/c2pa manifest into an embeddable
+// byte sequence for the given asset format. Asset I/O handlers registered on
+// the Builder's Context are used when composing the manifest.
+func (b *Builder) ComposeManifest(format string, manifestBytes []byte) ([]byte, error) {
+	out, n := c2paBuilderComposeManifest(b.ptr, format, manifestBytes)
 	if n < 0 {
-		return nil, fmt.Errorf("failed to format embeddable: %s", c2paError())
+		return nil, fmt.Errorf("failed to compose manifest: %s", c2paError())
 	}
 	return out, nil
 }

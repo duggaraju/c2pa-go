@@ -39,6 +39,19 @@ func TestBuilderNilContext(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestBuilderComposeManifestRejectsEmptyManifest(t *testing.T) {
+	ctx, err := NewContext()
+	require.NoError(t, err)
+	defer ctx.Close()
+
+	builder, err := NewBuilder(ctx)
+	require.NoError(t, err)
+	defer builder.Close()
+
+	_, err = builder.ComposeManifest("image/jpeg", nil)
+	assert.ErrorContains(t, err, "failed to compose manifest")
+}
+
 func TestSettingsGuards(t *testing.T) {
 	var settings Settings
 
