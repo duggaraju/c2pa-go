@@ -130,6 +130,8 @@ type ClaimGeneratorInfoElement struct {
 	// CrJSON schema uses `operating_system`; C2PA CBOR may use
 	// `schema.org.SoftwareApplication.operatingSystem`.
 	OperatingSystem *string `json:"operating_system"`
+	// The version of the specification used to produce this manifest (SemVer)
+	SpecVersion *string `json:"specVersion"`
 	// A human readable string of the product's version
 	Version *string `json:"version"`
 }
@@ -158,7 +160,7 @@ type IconClass struct {
 	// The hash of the resource (if applicable).
 	//
 	// Byte string containing the hash value
-	Hash *HashUnion `json:"hash"`
+	Hash *Alg `json:"hash"`
 	// A URI that identifies the resource as referenced from the manifest.
 	//
 	// This may be a JUMBF URI, a file path, a URL or any other string.
@@ -190,6 +192,9 @@ type IngredientElement struct {
 	DataTypes []DataTypeElement `json:"data_types"`
 	// Additional description of the ingredient.
 	Description *string `json:"description"`
+	// One of the source types defined at <https://cv.iptc.org/newscodes/digitalsourcetype/>
+	// or in this specification. Cannot be combined with `activeManifest`.
+	DigitalSourceType *string `json:"digital_source_type"`
 	// Document ID from `xmpMM:DocumentID` in XMP metadata.
 	DocumentID *string `json:"document_id"`
 	// The format of the source file as a MIME type.
@@ -464,6 +469,13 @@ type ValidationResultsClass struct {
 	// ingredient's
 	// manifest. Present if the the ingredient is a C2PA asset.
 	IngredientDeltas []IngredientDeltaElement `json:"ingredientDeltas"`
+	// The version of the specification against which the validation was performed (SemVer
+	// formatted string).
+	SpecVersion *string `json:"specVersion"`
+	// URI to the trust list use to validate the time-stamp.
+	TimestampTrustListURI *string `json:"timestampTrustListUri"`
+	// URI to the trust list that was used to validate manifests signing certificate.
+	TrustListURI *string `json:"trustListUri"`
 	// Time when the validation was performed (RFC 3339 date-time). Used only for document-level
 	// validationInfo; not serialized in validationResults (e.g. ingredient assertions).
 	ValidationTime *string `json:"validationTime"`
@@ -588,6 +600,8 @@ type ClaimGeneratorInfoClass struct {
 	// CrJSON schema uses `operating_system`; C2PA CBOR may use
 	// `schema.org.SoftwareApplication.operatingSystem`.
 	OperatingSystem *string `json:"operating_system"`
+	// The version of the specification used to produce this manifest (SemVer)
+	SpecVersion *string `json:"specVersion"`
 	// A human readable string of the product's version
 	Version *string `json:"version"`
 }
@@ -616,7 +630,7 @@ type ClaimGeneratorInfoIcon struct {
 	// The hash of the resource (if applicable).
 	//
 	// Byte string containing the hash value
-	Hash *HashUnion `json:"hash"`
+	Hash *Alg `json:"hash"`
 	// A URI that identifies the resource as referenced from the manifest.
 	//
 	// This may be a JUMBF URI, a file path, a URL or any other string.
@@ -648,6 +662,9 @@ type IngredientClass struct {
 	DataTypes []DataTypeClass `json:"data_types"`
 	// Additional description of the ingredient.
 	Description *string `json:"description"`
+	// One of the source types defined at <https://cv.iptc.org/newscodes/digitalsourcetype/>
+	// or in this specification. Cannot be combined with `activeManifest`.
+	DigitalSourceType *string `json:"digital_source_type"`
 	// Document ID from `xmpMM:DocumentID` in XMP metadata.
 	DocumentID *string `json:"document_id"`
 	// The format of the source file as a MIME type.
@@ -922,6 +939,13 @@ type IngredientValidationResults struct {
 	// ingredient's
 	// manifest. Present if the the ingredient is a C2PA asset.
 	IngredientDeltas []IngredientDeltaClass `json:"ingredientDeltas"`
+	// The version of the specification against which the validation was performed (SemVer
+	// formatted string).
+	SpecVersion *string `json:"specVersion"`
+	// URI to the trust list use to validate the time-stamp.
+	TimestampTrustListURI *string `json:"timestampTrustListUri"`
+	// URI to the trust list that was used to validate manifests signing certificate.
+	TrustListURI *string `json:"trustListUri"`
 	// Time when the validation was performed (RFC 3339 date-time). Used only for document-level
 	// validationInfo; not serialized in validationResults (e.g. ingredient assertions).
 	ValidationTime *string `json:"validationTime"`
@@ -989,16 +1013,17 @@ type Settings struct {
 	//
 	// [`Builder`]: crate::Builder
 	Builder *Builder `json:"builder,omitempty"`
-	// Settings for configuring the CAWG trust lists.
-	CawgTrust *CawgTrust `json:"cawg_trust,omitempty"`
 	// Settings for configuring the CAWG x509 signer, accessible via [`Settings::signer`].
 	CawgX509Signer *CawgX509SignerClass `json:"cawg_x509_signer"`
 	// Settings for configuring core features.
 	Core *Core `json:"core,omitempty"`
 	// Settings for configuring the base C2PA signer, accessible via [`Settings::signer`].
 	Signer *CawgX509SignerClass `json:"signer"`
-	// Settings for configuring the C2PA trust lists.
-	Trust *CawgTrust `json:"trust,omitempty"`
+	// List of soft binding algorithms to validate against. If not specified, soft binding
+	// errors may be generated.
+	SoftBinding *SoftBinding `json:"soft_binding,omitempty"`
+	// Settings for configuring the trust lists (C2PA, CAWG, or TSA).
+	Trust *Trust `json:"trust,omitempty"`
 	// Settings for configuring verification.
 	Verify *Verify `json:"verify,omitempty"`
 	// Version of the configuration.
@@ -1019,6 +1044,15 @@ type Builder struct {
 	//
 	// [`TimeStamp`]: crate::assertions::TimeStamp
 	AutoTimestampAssertion AutoTimestampAssertion `json:"auto_timestamp_assertion"`
+	// Whether `/free` and `/skip` boxes are excluded from the BMFF/MP4 hard-binding hash.
+	//
+	// `/free` and `/skip` are reserved/padding space that apps commonly rewrite after
+	// signing (e.g. to reclaim or repurpose it), so the C2PA spec permits excluding
+	// them. Set to `false` to fold their content into the hash instead, so any later
+	// edit to either box invalidates the hard binding like any other content change.
+	//
+	// The default value is `true`.
+	BmffHashExcludeFreeAndSkipBoxes bool `json:"bmff_hash_exclude_free_and_skip_boxes"`
 	// Whether to create [`CertificateStatus`] assertions for manifests to store certificate
 	// revocation
 	// status. The assertion can be fetched for the active manifest or for all manifests
@@ -1063,6 +1097,18 @@ type Builder struct {
 	// Whether to generate a C2PA archive (instead of zip) when writing the manifest builder.
 	// Now always defaults to true - the ability to disable it will be removed in the future.
 	GenerateC2PaArchive *bool `json:"generate_c2pa_archive"`
+	// Whether to ignore errors encountered while loading or validating an [`Ingredient`]'s
+	// manifest (e.g. invalid file format).
+	//
+	// When enabled, a hard error is reported as a `general.error` in the ingredient's
+	// [`validation_results`] instead of being returned, so the [`Ingredient`] still loads
+	// and callers can inspect what went wrong.
+	//
+	// The default value is false.
+	//
+	// [`Ingredient`]: crate::Ingredient
+	// [`validation_results`]: crate::Ingredient::validation_results
+	IgnoreIngredientErrors bool `json:"ignore_ingredient_errors"`
 	// The default [`BuilderIntent`] for the [`Builder`].
 	//
 	// See [`BuilderIntent`] for more information.
@@ -1106,6 +1152,20 @@ type Actions struct {
 	// [Actions::all_actions_included][crate::assertions::Actions::all_actions_included]
 	// field.
 	AllActionsIncluded *bool `json:"all_actions_included"`
+	// Whether to automatically set
+	// [Actions::all_actions_included][crate::assertions::Actions::all_actions_included]
+	// to `true` when the manifest's sole recorded action is `c2pa.opened` — i.e. the asset was
+	// opened only to record that action and immediately re-saved without any other changes,
+	// as required by the
+	// [C2PA Technical
+	// Specification](https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html#_all_actions_included).
+	//
+	// Disabled by default: the builder can only see changes that were recorded as an
+	// [`Action`], so enabling this is an assertion by the caller that every change made to
+	// the asset in this workflow is in fact tracked as an action.
+	// Takes priority over `all_actions_included` when it applies, but never overrides a value
+	// the caller explicitly set on the actions assertion data itself.
+	AutoAllActionsIncluded bool `json:"auto_all_actions_included"`
 	// Whether to automatically generate a c2pa.created [Action] assertion or error that it
 	// doesn't already exist.
 	//
@@ -1328,36 +1388,6 @@ type Thumbnail struct {
 	Quality Quality `json:"quality"`
 }
 
-// Settings for configuring the CAWG trust lists.
-//
-// Settings to configure the trust list.
-//
-// Settings for configuring the C2PA trust lists.
-type CawgTrust struct {
-	// List of explicitly allowed certificates as a PEM bundle.
-	AllowedList *string `json:"allowed_list"`
-	// List of default trust anchor root certificates as a PEM bundle.
-	//
-	// Normally this option contains the official C2PA-recognized trust anchors found here:
-	// <https://github.com/c2pa-org/conformance-public/tree/main/trust-list>
-	TrustAnchors *string `json:"trust_anchors"`
-	// List of allowed extended key usage (EKU) object identifiers (OID) that
-	// certificates must have.
-	TrustConfig *string `json:"trust_config"`
-	// List of additional user-provided trust anchor root certificates as a PEM bundle.
-	UserAnchors *string `json:"user_anchors"`
-	// Whether to verify certificates against the trust lists specified in [`Trust`]. This
-	// option is ONLY applicable to CAWG.
-	//
-	// The default value is true.
-	//
-	// <div class="warning">
-	// Verifying trust is REQUIRED by the CAWG spec. This option should only be used for
-	// development or testing.
-	// </div>
-	VerifyTrustList *bool `json:"verify_trust_list,omitempty"`
-}
-
 // A signer configured locally.
 //
 // A signer configured remotely.
@@ -1400,7 +1430,43 @@ type Remote struct {
 // Settings for configuring core features.
 //
 // Settings to configure core features.
+//
+// This struct is `#[non_exhaustive]`: construct it via [`Default`] (and the `with_*`
+// builders on
+// [`Settings`]) rather than a struct literal, so that future settings can be added without
+// a
+// breaking change.
 type Core struct {
+	// Whether the SDK follows HTTP redirects for requests made while reading and validating
+	// (remote manifests, OCSP, timestamps, `did:web`).
+	//
+	// Because some request URLs come from untrusted content, following redirects can be abused
+	// to
+	// reach internal or cloud-metadata endpoints (SSRF – CAI-12574). To prevent that while
+	// remaining compatible with legitimate redirects:
+	//
+	// - `true` (default): redirects are followed, **except** when a redirect target is a
+	// non-globally-routable address (loopback, private/RFC1918, link-local and
+	// cloud-metadata,
+	// IPv6 unique-local/link-local, CGNAT, etc.). Such a redirect is rejected with
+	// [`HttpResolverError::RedirectTargetDisallowed`]. Redirects to public hosts are followed
+	// normally.
+	// - `false`: redirects are not followed at all; a redirect response is surfaced as
+	// [`HttpResolverError::RedirectDisallowed`].
+	//
+	// This applies to redirect *targets*, not the initial request: a URL that *directly* names
+	// an
+	// internal host (for example an enterprise OCSP responder on a private address, or a
+	// `localhost` development server) is still fetched. Use [`allowed_network_hosts`] to
+	// restrict
+	// which hosts may be contacted at all.
+	//
+	// [`allowed_network_hosts`]: Core::allowed_network_hosts
+	// [`HttpResolverError::RedirectTargetDisallowed`]:
+	// crate::http::HttpResolverError::RedirectTargetDisallowed
+	// [`HttpResolverError::RedirectDisallowed`]:
+	// crate::http::HttpResolverError::RedirectDisallowed
+	AllowRedirects *bool `json:"allow_redirects,omitempty"`
 	// <div class="warning">
 	// The CAWG identity assertion does not currently respect this setting.
 	// See [Issue #1645](https://github.com/contentauth/c2pa-rs/issues/1645).
@@ -1423,9 +1489,16 @@ type Core struct {
 	// is omitted, any scheme is allowed as long as the host matches.
 	//
 	// The behavior is as follows:
-	// - `None` (default) no filtering enabled.
+	// - `None` (default): no host allow-list is applied. Redirect handling is governed
+	// independently by [`allow_redirects`] (which rejects redirects to internal addresses).
 	// - `Some(vec)` where `vec` is empty, all traffic is blocked.
 	// - `Some(vec)` with at least one pattern, filtering enabled for only those patterns.
+	//
+	// When an allow-list is set it is enforced on every request, including each redirect hop
+	// the
+	// SDK follows, so a redirect to a host outside the allow-list is rejected.
+	//
+	// [`allow_redirects`]: Core::allow_redirects
 	//
 	// # Examples
 	//
@@ -1504,6 +1577,90 @@ type Core struct {
 	// [Compressed manifests - C2PA Technical
 	// Specification](https://spec.c2pa.org/specifications/specifications/2.3/specs/C2PA_Specification.html#_compressed_boxes)
 	PreferCompressManifests *bool `json:"prefer_compress_manifests,omitempty"`
+}
+
+// List of soft binding algorithms to validate against. If not specified, soft binding
+// errors may be generated.
+type SoftBinding struct {
+	SoftBindingAlgorithms []string `json:"soft_binding_algorithms"`
+}
+
+// Settings for configuring the trust lists (C2PA, CAWG, or TSA).
+//
+// Settings to configure the trust list.
+type Trust struct {
+	// This option contains the set of trust anchors used to validate certificates.
+	Anchors      []AnchorElement `json:"anchors"`
+	TrustAnchors *string         `json:"trust_anchors"`
+	// List of allowed extended key usage (EKU) object identifiers (OID) that
+	// certificates must have.
+	TrustConfig *string `json:"trust_config"`
+	UserAnchors *string `json:"user_anchors"`
+}
+
+type AnchorElement struct {
+	// List of explicitly allowed CAWG identity or Singing certificates as a PEM bundle.
+	//
+	// Under the CAWG interim trust model (CAWG identity assertion spec §8.2.4.1),
+	// this corresponds to the IPTC Origin Verified News Publishers end-entity
+	// certificate list (<https://trust.iptc.org/end-entity-list.pem>).
+	//
+	// When used for C2PA this will not be C2PA trust list recognized or acknowledged
+	// certificates and
+	// should only be used for non-C2PA conformant cases.
+	AllowedList *string `json:"allowed_list"`
+	// Specifies the details of a specific trust list.
+	//
+	// Normally this option contains the official C2PA-recognized trust anchors found here:
+	// <https://github.com/c2pa-org/conformance-public/tree/main/trust-list>
+	// or a user supplied trust list.  This format is a PEM string of certificates.
+	// For C2PA trust lists the TrustListKind should be ['Signer]
+	//
+	// When validating CAWG X.509 identity signatures.
+	//
+	// Under the CAWG interim trust model (CAWG identity assertion spec §8.2.4.1,
+	// valid for assertions issued on or before 31 March 2027 and carrying a
+	// trusted time stamp), these are the CAWG-recognized trust anchors – the
+	// Mozilla Root Store with the Email (S/MIME) trust bit enabled
+	//
+	// (<https://ccadb.my.salesforce-sites.com/mozilla/IncludedRootsPEMTxt?TrustBitsInclude=Email>)
+	// and the IPTC Origin Verified News Publishers trust-anchor list
+	// (<https://trust.iptc.org/anchor-list.pem>) – not the C2PA conformance
+	// trust-list.  For CAWG trust the TrustListKind should be ['CAWG']
+	TrustAnchors *string `json:"trust_anchors,omitempty"`
+	// List of allowed extended key usage (EKU) object identifiers (OID) that
+	// certificates must have. This will overlay the default top level trust_config.
+	// If the trust_kind is CAWG it will override the top level trust config
+	//
+	// When validating CAWG identity certificates.
+	//
+	// The CAWG interim trust model (CAWG identity assertion spec §8.2.4.1)
+	// requires the `id-kp-emailProtection` EKU (1.3.6.1.5.5.7.3.4) together with
+	// one of the CA/Browser Forum S/MIME certificate-policy OIDs:
+	// organization-validated (2.23.140.1.5.2.2 / 2.23.140.1.5.2.3),
+	// sponsor-validated (2.23.140.1.5.3.2 / 2.23.140.1.5.3.3), or
+	// individual-validated (2.23.140.1.5.4.2 / 2.23.140.1.5.4.3). Mailbox-validated
+	// and legacy certificate purposes are not accepted.
+	TrustConfig *string `json:"trust_config"`
+	// Kind of trust list.  This is used to determine the trust purpose, default is Signer.
+	TrustKind *TrustKind `json:"trust_kind,omitempty"`
+	// URI identifier for the trust list.  If not is present a unique identifier will be
+	// generated.
+	TrustURI *string `json:"trust_uri"`
+	// Exact-match allow-list of trusted CAWG identity claims aggregation (ICA)
+	// issuer DIDs.
+	//
+	// Each entry is a full DID string (any DID method) that is compared, after
+	// stripping any fragment, against the `issuer` of an ICA verifiable
+	// credential. An issuer that is not present on this list is reported with
+	// the informational code `cawg.ica.untrusted_issuer` for that identity
+	// assertion and its `cawg.ica.credential_valid` success code is withheld.
+	//
+	// The default value is empty, meaning that NO ICA issuer is trusted. This
+	// is a deliberate secure default: a self-issued `did:jwk` (or any other
+	// issuer) is not trustworthy simply because its signature is
+	// self-consistent. Populate this list with the DIDs of issuers you trust.
+	TrustedIcaIssuers []string `json:"trusted_ica_issuers"`
 }
 
 // Settings for configuring verification.
@@ -1726,32 +1883,14 @@ const (
 	ParentOf    Relationship = "parentOf"
 )
 
-// ECDSA with SHA-256
+// JSON Schema proxy for [`SigningAlg`].
 //
-// # ECDSA with SHA-384
-//
-// # ECDSA with SHA-512
-//
-// # RSASSA-PSS using SHA-256 and MGF1 with SHA-256
-//
-// # RSASSA-PSS using SHA-384 and MGF1 with SHA-384
-//
-// # RSASSA-PSS using SHA-512 and MGF1 with SHA-512
-//
-// Edwards-Curve DSA (Ed25519 instance only)
+// `c2pa_raw_crypto::SigningAlg` intentionally does not depend on `schemars`,
+// so it does not implement [`schemars::JsonSchema`]. SDK types that expose a
+// `SigningAlg` in their JSON schema reference this mirror (whose variants match
+// `SigningAlg`'s serialized form) via `#[schemars(with = "...")]`.
 //
 // Algorithm to use for signing.
-//
-// Describes the digital signature algorithms allowed by the C2PA spec.
-//
-// Per [§13.2, “Digital Signatures”]:
-//
-// > All digital signatures applied as per the technical requirements of this
-// > specification shall be generated using one of the digital signature
-// > algorithms and key types listed as described in this section.
-//
-// [§13.2, “Digital Signatures”]:
-// https://spec.c2pa.org/specifications/specifications/2.3/specs/C2PA_Specification.html#_digital_signatures
 type AlgEnum string
 
 const (
@@ -1799,7 +1938,7 @@ const (
 //
 // Fetch timestamps for only the parent manifest.
 //
-// Fetch timestmaps for all manifests in the manifest store.
+// Fetch timestamps for all manifests in the manifest store.
 type FetchScope string
 
 const (
@@ -1876,12 +2015,21 @@ const (
 	Medium Quality = "medium"
 )
 
-type HashUnion struct {
+// Kind of trust list.  This is used to determine the trust purpose, default is Signer.
+type TrustKind string
+
+const (
+	Cawg     TrustKind = "cawg"
+	Manifest TrustKind = "manifest"
+	Tsa      TrustKind = "tsa"
+)
+
+type Alg struct {
 	IntegerArray []int64
 	String       *string
 }
 
-func (x *HashUnion) UnmarshalJSON(data []byte) error {
+func (x *Alg) UnmarshalJSON(data []byte) error {
 	x.IntegerArray = nil
 	object, err := unmarshalUnion(data, nil, nil, nil, &x.String, true, &x.IntegerArray, false, nil, false, nil, false, nil, true)
 	if err != nil {
@@ -1892,7 +2040,7 @@ func (x *HashUnion) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (x *HashUnion) MarshalJSON() ([]byte, error) {
+func (x *Alg) MarshalJSON() ([]byte, error) {
 	return marshalUnion(nil, nil, nil, x.String, x.IntegerArray != nil, x.IntegerArray, false, nil, false, nil, false, nil, true)
 }
 
