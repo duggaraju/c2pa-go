@@ -21,7 +21,7 @@ jobs:
   check-and-update:
     if: github.event_name != 'pull_request'
     name: Check for new c2pa-c-ffi tags
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -297,7 +297,7 @@ jobs:
     permissions:
       actions: write
       contents: write
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout merged commit
         uses: actions/checkout@v7
