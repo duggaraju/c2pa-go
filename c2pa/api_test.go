@@ -39,6 +39,55 @@ func TestBuilderNilContext(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestBuilderLabel(t *testing.T) {
+	ctx, err := NewContext()
+	require.NoError(t, err)
+	defer ctx.Close()
+
+	builder, err := NewBuilder(ctx)
+	require.NoError(t, err)
+	defer builder.Close()
+
+	label, present, err := builder.Label()
+	require.NoError(t, err)
+	assert.Empty(t, label)
+	assert.False(t, present)
+
+	const configuredLabel = "urn:c2pa:00000000-0000-4000-8000-000000000000"
+	require.NoError(t, builder.SetLabel(configuredLabel))
+	label, present, err = builder.Label()
+	require.NoError(t, err)
+	assert.Equal(t, configuredLabel, label)
+	assert.True(t, present)
+
+	archive := filepath.Join(t.TempDir(), "builder.c2pa")
+	require.NoError(t, builder.ToArchiveFile(archive))
+	restored, err := NewBuilder(ctx)
+	require.NoError(t, err)
+	defer restored.Close()
+	_, err = restored.FromArchiveFile(archive)
+	require.NoError(t, err)
+	label, present, err = restored.Label()
+	require.NoError(t, err)
+	assert.Equal(t, configuredLabel, label)
+	assert.True(t, present)
+
+	require.NoError(t, builder.SetLabel(""))
+	label, present, err = builder.Label()
+	require.NoError(t, err)
+	assert.Empty(t, label)
+	assert.True(t, present, "an explicitly empty label differs from an unset label")
+}
+
+func TestBuilderLabelErrors(t *testing.T) {
+	builder := &Builder{}
+	label, present, err := builder.Label()
+	assert.ErrorContains(t, err, "failed to get builder label")
+	assert.Empty(t, label)
+	assert.False(t, present)
+	assert.ErrorContains(t, builder.SetLabel("label"), "failed to set builder label")
+}
+
 func TestBuilderComposeManifestRejectsEmptyManifest(t *testing.T) {
 	ctx, err := NewContext()
 	require.NoError(t, err)

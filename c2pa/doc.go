@@ -45,7 +45,9 @@
 //
 // The [Builder] type mirrors the upstream API, including embeddable workflows
 // through [Builder.ComposeManifest], [Builder.Placeholder], and
-// [Builder.SignEmbeddable]. CAWG identity assertions can use either an X.509
+// [Builder.SignEmbeddable]. Use [Builder.SetLabel] to choose the manifest label
+// and [Builder.Label] to inspect whether one is configured.
+// CAWG identity assertions can use either an X.509
 // identity signer through [NewIdentitySigner] or a callback-backed
 // [CredentialHolder] through [NewIdentitySignerWithCredentialHolder].
 //

@@ -198,6 +198,9 @@ func TestBuilderSignWithContext_Valid(t *testing.T) {
 	input := "../c2pa-rs/sdk/tests/fixtures/C.jpg"
 	output := filepath.Join(t.TempDir(), "signed.jpg")
 
+	const configuredLabel = "urn:c2pa:00000000-0000-4000-8000-000000000000"
+	require.NoError(t, b.SetLabel(configuredLabel))
+
 	manifest, err := b.SignWithContext(input, output)
 	require.NoError(t, err)
 	assert.NotEmpty(t, manifest)
@@ -219,6 +222,7 @@ func TestBuilderSignWithContext_Valid(t *testing.T) {
 	store, err := r.Manifest()
 	require.NoError(t, err)
 	require.NotNil(t, store.ActiveManifest)
+	assert.Equal(t, configuredLabel, *store.ActiveManifest)
 	active, ok := store.Manifests[*store.ActiveManifest]
 	require.True(t, ok)
 	require.Len(t, active.Ingredients, 1)

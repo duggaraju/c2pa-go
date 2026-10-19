@@ -296,6 +296,19 @@ func c2paBuilderSetRemoteUrl(b unsafe.Pointer, url string) int {
 	return int(C.c2pa_builder_set_remote_url((*C.C2paBuilder)(b), curl))
 }
 
+func c2paBuilderLabel(b unsafe.Pointer) (string, int) {
+	var label *C.char
+	rc := C.c2pa_builder_label((*C.C2paBuilder)(b), &label)
+	defer c2paFree(unsafe.Pointer(label))
+	return C.GoString(label), int(rc)
+}
+
+func c2paBuilderSetLabel(b unsafe.Pointer, label string) int {
+	clabel := C.CString(label)
+	defer C.free(unsafe.Pointer(clabel))
+	return int(C.c2pa_builder_set_label((*C.C2paBuilder)(b), clabel))
+}
+
 func c2paBuilderSetBasePath(b unsafe.Pointer, path string) int {
 	cpath := C.CString(path)
 	defer C.free(unsafe.Pointer(cpath))

@@ -67,6 +67,8 @@ func c2paBuilderWithDefinition(unsafe.Pointer, string) unsafe.Pointer           
 func c2paBuilderWithArchive(unsafe.Pointer, unsafe.Pointer) unsafe.Pointer      { return nil }
 func c2paBuilderSetNoEmbed(unsafe.Pointer)                                      {}
 func c2paBuilderSetRemoteUrl(unsafe.Pointer, string) int                        { return -1 }
+func c2paBuilderLabel(unsafe.Pointer) (string, int)                             { return "", -1 }
+func c2paBuilderSetLabel(unsafe.Pointer, string) int                            { return -1 }
 func c2paBuilderSetBasePath(unsafe.Pointer, string) int                         { return -1 }
 func c2paBuilderSetIntent(unsafe.Pointer, BuilderIntent, DigitalSourceType) int { return -1 }
 func c2paBuilderAddAction(unsafe.Pointer, string) int                           { return -1 }

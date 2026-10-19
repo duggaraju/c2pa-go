@@ -33,6 +33,23 @@ func (b *Builder) SetRemoteUrl(url string) error {
 	return nil
 }
 
+// Label returns the builder's manifest label and whether a label is set.
+func (b *Builder) Label() (label string, present bool, err error) {
+	label, rc := c2paBuilderLabel(b.ptr)
+	if rc < 0 {
+		return "", false, fmt.Errorf("failed to get builder label: %s", c2paError())
+	}
+	return label, rc == 1, nil
+}
+
+// SetLabel sets the manifest label to use when signing. The label is copied.
+func (b *Builder) SetLabel(label string) error {
+	if c2paBuilderSetLabel(b.ptr, label) < 0 {
+		return fmt.Errorf("failed to set builder label: %s", c2paError())
+	}
+	return nil
+}
+
 // SetBasePath sets the directory used to resolve resources not found in memory.
 func (b *Builder) SetBasePath(path string) error {
 	if c2paBuilderSetBasePath(b.ptr, path) < 0 {
