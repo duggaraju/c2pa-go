@@ -106,10 +106,10 @@ There are two supported paths:
    git submodule update --init --recursive
 
    # Build the c2pa-rs C FFI static library (debug flavor) into c2pa-rs/target/debug.
-   go generate ./c2pa/...
+   go generate ./c2pa
 
    # Or build the release flavor into c2pa-rs/target/release.
-   go generate -tags=release ./c2pa/...
+   go generate -tags=release ./c2pa
 
    # Build the bindings and the sample CLI.
    go build ./c2pa                       # debug
@@ -117,12 +117,13 @@ There are two supported paths:
    (cd c2pa-cli && go build .)
    ```
 
-The `go:generate` directives in [c2pa/generate.go](c2pa/generate.go),
-[c2pa/generate_debug.go](c2pa/generate_debug.go) and
-[c2pa/generate_release.go](c2pa/generate_release.go) regenerate the
-[c2pa/schema](c2pa/schema) package and run `cargo build --features rust_native_crypto`
-inside `c2pa-rs/c2pa_c_ffi` for the flavor matching the `-tags` passed to
-`go generate`. The cgo flag files in [c2pa](c2pa) point the linker at
+The platform-specific `go:generate` directives in [c2pa](c2pa) build the
+native library inside `c2pa-rs/c2pa_c_ffi` for the flavor matching the `-tags`
+passed to `go generate`. Targeting only `./c2pa` uses the checked-in
+[schema types](c2pa/schema/schema.go) without regenerating them; see
+[Regenerating the schema package](#regenerating-the-schema-package) for the separate regeneration command.
+CI regenerates and checks the schema only on Linux/amd64.
+The cgo flag files in [c2pa](c2pa) point the linker at
 `c2pa-rs/target/{debug,release}` accordingly.
 
 Remote operations (remote manifest fetches, OCSP, RFC 3161 timestamp

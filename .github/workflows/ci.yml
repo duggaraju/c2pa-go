@@ -63,20 +63,19 @@ jobs:
           cache-workspaces: c2pa-rs
 
       - name: Set up Node.js (for quicktype schema generation)
+        if: matrix.os == 'linux' && matrix.goarch == 'amd64'
         uses: actions/setup-node@v7
         with:
           node-version: '20'
 
-      - name: Run go generate (release)
+      - name: Build native library (release)
         if: matrix.os != 'windows' || matrix.goarch != 'arm64'
-        # Regenerates ./c2pa/schema and builds c2pa-rs/c2pa_c_ffi for the
-        # release flavor via the go:generate directives in c2pa/generate*.go.
         env:
           CGO_ENABLED: '1'
           RUSTFLAGS: '-A unused-imports'
-        run: go generate -tags=release ./c2pa/...
+        run: go generate -tags=release ./c2pa
 
-      - name: Run go generate (release, windows arm64)
+      - name: Build native library (release, windows arm64)
         if: matrix.os == 'windows' && matrix.goarch == 'arm64'
         shell: msys2 {0}
         env:
@@ -89,11 +88,15 @@ jobs:
           RUSTFLAGS: '-A unused-imports'
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER: clang
           CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_AR: llvm-ar
-        run: go generate -tags=release ./c2pa/...
+        run: go generate -tags=release ./c2pa
 
-      - name: Verify generated schema is up to date
+      - name: Regenerate and verify schema
         if: matrix.os == 'linux' && matrix.goarch == 'amd64'
-        run: git diff --exit-code -- c2pa/schema/schema.go
+        env:
+          RUSTFLAGS: '-A unused-imports'
+        run: |
+          go generate ./c2pa/schema/...
+          git diff --exit-code -- c2pa/schema/schema.go
 
       - name: golangci-lint (c2pa)
         if: matrix.os == 'linux' && matrix.goarch == 'amd64'
