@@ -6,4 +6,4 @@ retract [v0.94.0, v0.94.1] // v0.94.0 was published accidentally; v0.94.1 contai
 
 require github.com/stretchr/testify v1.12.1
 
-require go.yaml.in/yaml/v3 v3.0.5 // indirect
+require go.yaml.in/yaml/v3 v3.0.6 // indirect
