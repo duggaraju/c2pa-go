@@ -1,10 +1,11 @@
-//go:build !release && unix
-// +build !release,unix
+//go:build !release && unix && !musl
+// +build !release,unix,!musl
 
 // Debug build of the c2pa-rs C FFI static library (Unix-like systems).
 //
 // Run `go generate ./c2pa/...` (no tags) to build the debug library into
 // c2pa-rs/target/debug, matching the paths in cgo_flags_debug*.go.
+// For musl, see generate_musl_debug.go.
 
 package c2pa
 

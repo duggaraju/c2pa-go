@@ -31,8 +31,21 @@ The Go package links against prebuilt or locally built native artifacts under `c
 - To use prebuilt release binaries, use `fetchlib`:
   - `go run ./c2pa/cmd/fetchlib`
   - `go run ./c2pa/cmd/fetchlib@latest`
+  - Prebuilt Linux bundles are glibc only; `fetchlib` refuses to run on a musl host.
 
 If the native library lives outside the default path, override `CGO_CFLAGS` and `CGO_LDFLAGS` rather than editing linker paths casually.
+
+### musl
+
+There are no prebuilt musl bundles; build locally.
+
+- On Alpine/musl hosts the stock flow works unchanged (`go generate -tags=release ./c2pa`, then `go build -tags=release ./c2pa`).
+- On a glibc host, cross-build with the `musl` tag: `export CC=musl-gcc`, then `go generate -tags=release,musl ./c2pa && go build -tags=release,musl ./c2pa`. Needs `musl-tools` and `rustup target add <arch>-unknown-linux-musl`.
+- Test: `CC=musl-gcc go test -tags=release,musl ./c2pa`.
+- Artifacts go to `c2pa-rs/target/<arch>-unknown-linux-musl/{debug,release}` (amd64 and arm64, host arch via `uname -m`). `generate_musl_*.go` build them with inline `go:generate` directives and copy Rust's `libunwind.a` alongside.
+- Pass the same `-tags` to every `go` command. `cgo_flags_linux.go` is excluded by `musl`; `cgo_flags_linux_musl.go` replaces it.
+- Keep the cargo feature list in `generate_musl_*.go` in sync with the other `generate_*` files.
+- Full recipes (including other C libraries) are in README.md under "Building for musl and other C libraries".
 
 ## Schema Generation
 

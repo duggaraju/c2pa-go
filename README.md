@@ -22,10 +22,14 @@ produced by the `c2pa_c_ffi` crate.
 - Supported algorithms: `Ps256`/`Ps384`/`Ps512`, `Es256`/`Es384`/`Es512`,
   `Ed25519`.
 - Supported platforms (CI-built):
-  - Linux amd64, Linux arm64
+  - Linux amd64, Linux arm64 (glibc)
   - macOS amd64 (Intel), macOS arm64 (Apple Silicon)
   - Windows amd64 (MinGW-w64 / GCC toolchain via cgo)
   - Windows arm64 (LLVM / MinGW-w64 toolchain via cgo)
+- Linux with musl libc is supported by building the native library locally (the
+  prebuilt libraries are glibc only): Alpine/musl hosts use the stock flow, and
+  glibc hosts can cross-build static musl executables with `-tags=musl`. See
+  [Building for musl and other C libraries](#building-for-musl-and-other-c-libraries).
 - Bindings are not yet API-stable; the surface may change before a tagged
   release.
 
@@ -48,7 +52,8 @@ c2pa-rs/              Pinned upstream submodule built into the c2pa_c static lib
 
 - Go 1.24+
 - `cgo` enabled (`CGO_ENABLED=1`) with a C toolchain:
-  - Linux: `gcc` or `clang`
+  - Linux: `gcc` or `clang` (for musl: `musl-gcc`, or Alpine's native `gcc`; see
+    [Building for musl](#building-for-musl-and-other-c-libraries))
   - macOS: Xcode Command Line Tools (`xcode-select --install`)
   - Windows: a mingw-w64 toolchain on `PATH` (e.g. MSYS2 `MINGW64` for amd64,
     `CLANGARM64` for arm64). The MSVC `cl.exe` toolchain is **not** supported
@@ -74,7 +79,10 @@ The repo uses `go:generate` for every build artifact that isn't pure Go. The
 cgo flag files in [c2pa](c2pa) target the host OS automatically via Go build
 constraints; cross-arch builds are not currently supported by the
 `go:generate` directives — build on a host matching your target `GOOS/GOARCH`
-or download a prebuilt library from a GitHub Release (see below).
+or download a prebuilt library from a GitHub Release (see below). The one
+exception is cross-building for Linux/musl from a glibc host, which has its own
+`-tags=musl` path (see
+[Building for musl and other C libraries](#building-for-musl-and-other-c-libraries)).
 
 There are two supported paths:
 
@@ -134,6 +142,115 @@ a Go-side resolver wired up through `ContextBuilder.SetHttpResolver` — see
 proxy through a custom `http.Client`, inject test fixtures, or eventually
 build `libc2pa_c` without the `http` feature.
 
+### Building for musl and other C libraries
+
+The prebuilt bundles (see [below](#using-prebuilt-c-libraries)) are linked
+against **glibc**. They cannot be linked on musl (Alpine, `musl-gcc`), and a
+`libc2pa_c` built for one C library must not be linked into a program using
+another, so build the native library locally.
+
+**On Alpine (or any musl host):** nothing musl-specific is needed. The stock
+flow builds natively against the host's musl and links with the default cgo
+flags:
+
+```sh
+apk add build-base git go rust cargo
+git submodule update --init --recursive
+
+CGO_ENABLED=1 go generate -tags=release ./c2pa
+CGO_ENABLED=1 go build -tags=release ./c2pa
+(cd c2pa-cli && CGO_ENABLED=1 go build -tags=release .)
+```
+
+The result is dynamically linked against musl, as usual on Alpine.
+
+**From a glibc host (e.g. Ubuntu), to produce static musl executables:** use
+the `musl` build tag, which selects
+[cgo_flags_linux_musl.go](c2pa/cgo_flags_linux_musl.go) and the
+`generate_musl_*.go` hooks. They cross-build `libc2pa_c.a` for the host's
+architecture (`x86_64` or `aarch64`, from `uname -m`) into
+`c2pa-rs/target/<arch>-unknown-linux-musl/{debug,release}` and copy Rust's
+`libunwind.a` next to it.
+
+```sh
+git submodule update --init --recursive
+
+# musl-gcc comes from musl-tools on Debian/Ubuntu; the Rust target comes from rustup.
+sudo apt install musl-tools
+rustup target add x86_64-unknown-linux-musl     # aarch64-unknown-linux-musl on arm64
+
+export CGO_ENABLED=1 CC=musl-gcc
+go generate -tags=release,musl ./c2pa
+go build -tags=release,musl ./c2pa
+
+# Fully static executable (runs on any Linux kernel, including `FROM scratch`):
+(cd c2pa-cli && go build -tags=release,musl \
+    -ldflags '-linkmode external -extldflags "-static"' .)
+```
+
+Notes:
+
+- Pass the same `-tags` to every `go generate`/`build`/`vet`/`test`/`run`
+  invocation.
+- `CC` must target musl. With the default glibc `gcc` the link fails, so set
+  `CC=musl-gcc` (or a cross compiler such as `x86_64-linux-musl-gcc`). The same
+  variable is picked up by cargo for the C code in dependencies such as `ring`.
+- Without `-extldflags "-static"` the executable is dynamically linked against
+  musl and needs `/lib/ld-musl-<arch>.so.1` at run time. If the host cannot run
+  dynamically linked musl programs, pass the same `-ldflags` to the tests:
+  `go test -tags=release,musl -ldflags '-linkmode external -extldflags "-static"' ./c2pa`.
+- `libunwind.a` is copied because the static library needs an unwinder it does
+  not bundle (`cargo rustc ... -- --print native-static-libs` reports
+  `-lunwind -lc`), and the glibc host's `libgcc_eh.a` is not usable with musl.
+  The cgo flags link it with `-l:libunwind.a`.
+- The upstream `cdylib` is not built for musl by default (cargo prints
+  `dropping unsupported crate type cdylib`); only the static library is used.
+- Only `amd64` and `arm64` are wired into the musl cgo flags, and the host
+  architecture is used for the build. Use the generic recipe below for other
+  architectures or for cross-architecture builds.
+- Do not use `fetchlib` for musl: the prebuilt bundles are glibc only. It
+  refuses to run on a musl host or with `-libc=musl` (use `-libc=glibc` to
+  override a wrong detection).
+
+**Other C libraries and custom toolchains (uClibc-ng, other musl architectures,
+sysroots, ...):**
+
+The cgo flag files only need to find `libc2pa_c.a` and `c2pa.h`, so any
+target Rust supports can be used by building the library yourself and pointing
+cgo at it with `CGO_CFLAGS`/`CGO_LDFLAGS` (these are searched before the flags in
+[c2pa](c2pa), so no source changes are needed):
+
+```sh
+# 1. Build the static library for your target triple (see `rustup target list`).
+rustup target add <triple>
+(cd c2pa-rs/c2pa_c_ffi && \
+    CC_<triple_with_underscores>=<cross-gcc> \
+    CARGO_TARGET_<TRIPLE_UPPERCASE>_LINKER=<cross-gcc> \
+    cargo build --release --target <triple> \
+        --no-default-features --features rust_native_crypto,http,add_thumbnails)
+
+# 2. List the system libraries the static library needs (printed as
+#    "native-static-libs: -lunwind -lc ..."). Anything beyond the C library
+#    itself, such as -lunwind, must be supplied on the link line.
+(cd c2pa-rs/c2pa_c_ffi && cargo rustc --release --target <triple> \
+    --no-default-features --features rust_native_crypto,http,add_thumbnails \
+    -- --print native-static-libs)
+
+# 3. Build the Go code with a C compiler for the same libc and the right flags.
+lib=$PWD/c2pa-rs/target/<triple>/release
+export CGO_ENABLED=1 CC=<cross-gcc> GOOS=linux GOARCH=<goarch>
+export CGO_CFLAGS="-I$lib"
+export CGO_LDFLAGS="-L$lib -l:libc2pa_c.a -l:libunwind.a"   # add what step 2 reported
+go build -tags=release ./c2pa
+```
+
+If the Rust target ships its own unwinder it is at
+`$(rustc --print sysroot)/lib/rustlib/<triple>/lib/self-contained/libunwind.a`
+(copy it next to `libc2pa_c.a` as above, or point `-L` at that directory).
+Targets without a prebuilt Rust standard library (some uClibc-ng and
+Buildroot toolchains) additionally need a nightly toolchain with
+`-Z build-std`.
+
 ### Linting locally
 
 The CI workflow runs `golangci-lint` on the Linux amd64 release build path.
@@ -155,7 +272,10 @@ CGO_ENABLED=1 golangci-lint run --build-tags=release ./...
 CI publishes `libc2pa_c` + `c2pa.h` for every supported OS/arch as GitHub
 Release assets (named `c2pa-c-libs-release-<os>-<arch>.tar.gz`). Each bundle
 contains the static archive plus the platform's shared library/import library
-when available. To consume the bindings without a Rust toolchain, use the
+when available. The Linux bundles are built against **glibc**; on musl (e.g.
+Alpine) build from source instead, see
+[Building for musl and other C libraries](#building-for-musl-and-other-c-libraries).
+To consume the bindings without a Rust toolchain, use the
 `fetchlib` helper to download and extract the bundle for your host:
 
 ```sh
@@ -207,8 +327,9 @@ go get github.com/duggaraju/c2pa-go/c2pa
 ```
 
 You will still need a built `libc2pa_c` available at link time. The cgo flag
-files in [c2pa](c2pa) point at `c2pa-rs/target/{debug,release}`; adjust them for
-your deployment if you ship the shared library elsewhere.
+files in [c2pa](c2pa) point at `c2pa-rs/target/{debug,release}` (or
+`c2pa-rs/target/<arch>-unknown-linux-musl/{debug,release}` with `-tags=musl`);
+adjust them for your deployment if you ship the shared library elsewhere.
 
 ## Usage
 

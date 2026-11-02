@@ -1,7 +1,9 @@
 // fetchlib downloads the prebuilt native library bundle for the current
 // GOOS/GOARCH from a GitHub Release of duggaraju/c2pa-go and extracts it into
 // the location the cgo flags expect (../c2pa-rs/target/release by default), so
-// consumers can build the bindings without a Rust toolchain.
+// consumers can build the bindings without a Rust toolchain. The published
+// bundles are built against glibc; on musl, build from source instead (see the
+// README).
 //
 // Typical use from a checkout of this repo:
 //
@@ -25,6 +27,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -50,6 +53,7 @@ func main() {
 	osName := flag.String("os", runtime.GOOS, "target operating system")
 	arch := flag.String("arch", runtime.GOARCH, "target architecture")
 	link := flag.String("link", string(linkModeStatic), "link mode for suggested CGO env vars: static or dynamic")
+	libc := flag.String("libc", libcAuto, "C library the bundle will be linked against: auto, glibc or musl (only glibc bundles are published)")
 	envOnly := flag.Bool("env", false, "do not download; print suggested CGO env vars for an existing -dest and exit")
 	flag.Parse()
 
@@ -66,6 +70,10 @@ func main() {
 	if *envOnly {
 		printEnv(abs, *osName, mode)
 		return
+	}
+
+	if err := checkLibc(*libc, *osName, *arch, hostIsMusl); err != nil {
+		fail(err)
 	}
 
 	asset := releaseAssetName(*osName, *arch)
@@ -98,6 +106,49 @@ func parseLinkMode(value string) (linkMode, error) {
 	default:
 		return "", fmt.Errorf("unsupported -link value %q (want static or dynamic)", value)
 	}
+}
+
+const (
+	libcAuto  = "auto"
+	libcGlibc = "glibc"
+	libcMusl  = "musl"
+)
+
+// checkLibc rejects Linux targets the published bundles cannot serve: they are
+// built against glibc, so linking them with musl fails with undefined symbols.
+// With "auto" the host libc is probed, but only when the target is the host
+// platform, since the host says nothing about a cross-compile target.
+func checkLibc(value, osName, arch string, detectMusl func() bool) error {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case libcAuto, libcGlibc, libcMusl:
+	default:
+		return fmt.Errorf("unsupported -libc value %q (want auto, glibc or musl)", value)
+	}
+
+	if osName != "linux" || value == libcGlibc {
+		return nil
+	}
+	if value == libcAuto && (osName != runtime.GOOS || arch != runtime.GOARCH || !detectMusl()) {
+		return nil
+	}
+
+	return errors.New("the prebuilt libc2pa_c bundles are built for glibc and cannot be linked on musl.\n" +
+		"Build the library from source instead (see \"Building for musl and other C libraries\" in the README):\n" +
+		"  musl host (e.g. Alpine):       go generate -tags=release ./c2pa\n" +
+		"  glibc host, targeting musl:    CC=musl-gcc go generate -tags=release,musl ./c2pa\n" +
+		"If this host is not actually musl, download the glibc bundle anyway with -libc=glibc")
+}
+
+// hostIsMusl reports whether the host's C library is musl, based on the
+// output of `ldd --version` (musl's ldd identifies itself as "musl libc").
+func hostIsMusl() bool {
+	out, _ := exec.Command("ldd", "--version").CombinedOutput()
+	return lddOutputIsMusl(string(out))
+}
+
+func lddOutputIsMusl(output string) bool {
+	return strings.Contains(strings.ToLower(output), "musl")
 }
 
 func releaseAssetName(osName, arch string) string {
