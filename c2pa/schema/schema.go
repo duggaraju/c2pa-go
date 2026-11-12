@@ -61,6 +61,13 @@ type ManifestDefinition struct {
 	// A non-empty list in the definition is used as given.
 	ClaimGeneratorInfo []ClaimGeneratorInfoElement `json:"claim_generator_info,omitempty"`
 	// The version of the claim.  Defaults to 2.
+	//
+	// C2PA v1 claim signing (`Some(1)`) is deprecated as of 0.92.0 and will be
+	// removed in 0.93.0, scheduled for mid-January 2027. Omit this field or set
+	// it to `Some(2)` to sign C2PA v2 claims instead. Reading and validating
+	// existing C2PA v1 claims is unaffected.
+	// See the [migration
+	// guide](https://github.com/contentauth/c2pa-rs/blob/main/docs/c2pa-v1-signing-migration.md).
 	ClaimVersion *int64 `json:"claim_version"`
 	// The format of the source file as a MIME type.
 	Format *string `json:"format,omitempty"`
@@ -110,10 +117,11 @@ type ManifestDefinition struct {
 type AssertionElement struct {
 	// True if this assertion is attributed to the signer (defaults to false)
 	Created *bool `json:"created,omitempty"`
-	// The assertion data
+	// The assertion data. For CBOR assertions, JSON input accepts json_b64
+	// `b64'<base64>'` strings for byte fields at any depth.
 	Data interface{} `json:"data"`
 	// The kind of assertion data, either Cbor or Json (defaults to Cbor)
-	Kind *KindEnum `json:"kind"`
+	Kind *ManifestSchema `json:"kind"`
 	// An assertion label in reverse domain format
 	Label string `json:"label"`
 }
@@ -205,6 +213,10 @@ type IngredientElement struct {
 	InformationalURI *string `json:"informational_URI"`
 	// Instance ID from `xmpMM:InstanceID` in XMP metadata.
 	InstanceID *string `json:"instance_id"`
+	// If true, the ingredient assertion is added to created_assertions, rather than to
+	// gathered_assertions, which is the default.
+	// ParentOf ingredients are always created assertions, and this field is ignored for them.
+	IsCreated *bool `json:"is_created"`
 	// The ingredient's label as assigned in the manifest.
 	Label *string `json:"label"`
 	// A [`ManifestStore`] from the source asset extracted as a binary C2PA blob.
@@ -275,10 +287,6 @@ type RegionOfInterestClass struct {
 	Name *string `json:"name"`
 	// A range describing the region of interest for the specific asset.
 	Region []RegionElement `json:"region"`
-	// A value from our controlled vocabulary or an entity-specific value (e.g.,
-	// com.litware.coolArea) that represents
-	// the role of a region among other regions.
-	Role *RoleEnum `json:"role"`
 	// A value from a controlled vocabulary such as
 	// <https://cv.iptc.org/newscodes/imageregiontype/> or an entity-specific
 	// value (e.g., com.litware.newType) that represents the type of thing(s) depicted by a
@@ -583,7 +591,7 @@ type AssertionClass struct {
 	// There can be more than one assertion for any label
 	Instance *int64 `json:"instance"`
 	// The [ManifestAssertionKind] for this assertion (as stored in c2pa content)
-	Kind *KindEnum `json:"kind"`
+	Kind *ManifestSchema `json:"kind"`
 	// An assertion label in reverse domain format
 	Label string `json:"label"`
 }
@@ -675,6 +683,10 @@ type IngredientClass struct {
 	InformationalURI *string `json:"informational_URI"`
 	// Instance ID from `xmpMM:InstanceID` in XMP metadata.
 	InstanceID *string `json:"instance_id"`
+	// If true, the ingredient assertion is added to created_assertions, rather than to
+	// gathered_assertions, which is the default.
+	// ParentOf ingredients are always created assertions, and this field is ignored for them.
+	IsCreated *bool `json:"is_created"`
 	// The ingredient's label as assigned in the manifest.
 	Label *string `json:"label"`
 	// A [`ManifestStore`] from the source asset extracted as a binary C2PA blob.
@@ -745,10 +757,6 @@ type MetadatumRegionOfInterest struct {
 	Name *string `json:"name"`
 	// A range describing the region of interest for the specific asset.
 	Region []RegionClass `json:"region"`
-	// A value from our controlled vocabulary or an entity-specific value (e.g.,
-	// com.litware.coolArea) that represents
-	// the role of a region among other regions.
-	Role *RoleEnum `json:"role"`
 	// A value from a controlled vocabulary such as
 	// <https://cv.iptc.org/newscodes/imageregiontype/> or an entity-specific
 	// value (e.g., com.litware.newType) that represents the type of thing(s) depicted by a
@@ -1013,11 +1021,11 @@ type Settings struct {
 	//
 	// [`Builder`]: crate::Builder
 	Builder *Builder `json:"builder,omitempty"`
-	// Settings for configuring the CAWG x509 signer, accessible via [`Settings::signer`].
+	// Settings for configuring the CAWG x509 signer, used by [`crate::Context::signer`].
 	CawgX509Signer *CawgX509SignerClass `json:"cawg_x509_signer"`
 	// Settings for configuring core features.
 	Core *Core `json:"core,omitempty"`
-	// Settings for configuring the base C2PA signer, accessible via [`Settings::signer`].
+	// Settings for configuring the base C2PA signer, accessible via [`crate::Context::signer`].
 	Signer *CawgX509SignerClass `json:"signer"`
 	// List of soft binding algorithms to validate against. If not specified, soft binding
 	// errors may be generated.
@@ -1592,6 +1600,24 @@ type Core struct {
 	// [Compressed manifests - C2PA Technical
 	// Specification](https://spec.c2pa.org/specifications/specifications/2.3/specs/C2PA_Specification.html#_compressed_boxes)
 	PreferCompressManifests *bool `json:"prefer_compress_manifests,omitempty"`
+	// Number of times a blocking time-stamp request is sent before its last error is
+	// returned. A new attempt is made only after a transient failure: no answer, a
+	// timeout, or an HTTP 408, 429, 500, 502, 503 or 504 response. `1` disables retries.
+	//
+	// The default is 3. The value must be at least 1. Async time-stamp requests are sent
+	// once, as are blocking requests on browser WASM (which cannot sleep between attempts).
+	TimeStampRequestAttempts *int64 `json:"time_stamp_request_attempts,omitempty"`
+	// Time limit of each time-stamp request attempt, in milliseconds, applied by the
+	// SDK's built-in HTTP resolvers. A time-stamp service answers in well under a second;
+	// without a limit an attempt that hangs would wait for the HTTP client's default.
+	//
+	// The default is 10,000 (10 seconds). The value must be positive.
+	TimeStampRequestTimeoutInMS *int64 `json:"time_stamp_request_timeout_in_ms,omitempty"`
+	// Pause before the second time-stamp request attempt, in milliseconds, doubled before
+	// each later one.
+	//
+	// The default is 500.
+	TimeStampRetryDelayInMS *int64 `json:"time_stamp_retry_delay_in_ms,omitempty"`
 }
 
 // List of soft binding algorithms to validate against. If not specified, soft binding
@@ -1605,12 +1631,26 @@ type SoftBinding struct {
 // Settings to configure the trust list.
 type Trust struct {
 	// This option contains the set of trust anchors used to validate certificates.
-	Anchors      []AnchorElement `json:"anchors"`
-	TrustAnchors *string         `json:"trust_anchors"`
+	Anchors []AnchorElement `json:"anchors"`
 	// List of allowed extended key usage (EKU) object identifiers (OID) that
 	// certificates must have.
+	//
+	// When [`Trust::use_default_ekus`] is true (the default), the EKUs defined by
+	// the C2PA specification are always accepted and any OIDs listed here are
+	// added to that set rather than replacing it.
 	TrustConfig *string `json:"trust_config"`
-	UserAnchors *string `json:"user_anchors"`
+	// Whether to accept the built-in set of extended key usage (EKU) OIDs defined
+	// by the C2PA specification in addition to those listed in [`Trust::trust_config`].
+	//
+	// When false, only the EKUs listed in [`Trust::trust_config`] (and any
+	// [`TrustAnchor::trust_config`]) are accepted for claim signing.
+	// For legacy compatibility, `id-kp-emailProtection` is also accepted when
+	// no valid EKUs are loaded. `id-kp-timeStamping` and `id-kp-OCSPSigning`
+	// remain accepted by the general profile check; TSA and OCSP responder
+	// profiles additionally require their respective EKU.
+	//
+	// The default value is true.
+	UseDefaultEkus *bool `json:"use_default_ekus,omitempty"`
 }
 
 type AnchorElement struct {
@@ -1656,6 +1696,24 @@ type AnchorElement struct {
 	// sponsor-validated (2.23.140.1.5.3.2 / 2.23.140.1.5.3.3), or
 	// individual-validated (2.23.140.1.5.4.2 / 2.23.140.1.5.4.3). Mailbox-validated
 	// and legacy certificate purposes are not accepted.
+	//
+	// These six policy OIDs are enforced by CAWG X.509 validation, not parsed
+	// from this EKU-only setting. An emailProtection certificate is trusted
+	// under the interim model only through 31 March 2027 (inclusive, UTC), or
+	// when a trusted, associated timestamp attests to issuance by that date.
+	// Assertion-local timestamps must be v2 (`sigTst2`). Manifest timestamps
+	// and timestamp assertions are accepted only after checking their binding
+	// to the containing claim's signature and this assertion's signed hash.
+	// Timestamp signature, imprint, TSA profile, and TSA trust are checked even
+	// if claim timestamp trust checking is disabled.
+	//
+	// `id-kp-documentSigning` is a separate, non-interim acceptance path. If
+	// that purpose is accepted by the effective EKU policy, a certificate
+	// containing both documentSigning and emailProtection does not need an
+	// interim S/MIME policy or cutoff check. Existing certificate-profile and
+	// configured CAWG trust-anchor/allowed-list checks still apply. Claim
+	// signers, TSA certificates, and OCSP responders do not acquire these CAWG
+	// interim restrictions.
 	TrustConfig *string `json:"trust_config"`
 	// Kind of trust list.  This is used to determine the trust purpose, default is Signer.
 	TrustKind *TrustKind `json:"trust_kind,omitempty"`
@@ -1815,13 +1873,13 @@ type Verify struct {
 }
 
 // Assertions in C2PA can be stored in several formats
-type KindEnum string
+type ManifestSchema string
 
 const (
-	Binary KindEnum = "Binary"
-	Cbor   KindEnum = "Cbor"
-	JSON   KindEnum = "Json"
-	URI    KindEnum = "Uri"
+	Binary ManifestSchema = "Binary"
+	Cbor   ManifestSchema = "Cbor"
+	JSON   ManifestSchema = "Json"
+	URI    ManifestSchema = "Uri"
 )
 
 // The type of shape.
@@ -1885,37 +1943,6 @@ const (
 	Spatial    RegionType = "spatial"
 	Temporal   RegionType = "temporal"
 	Textual    RegionType = "textual"
-)
-
-// Arbitrary area worth identifying.
-//
-// This area is all that is left after a crop action.
-//
-// This area has had edits applied to it.
-//
-// The area where an ingredient was placed/added.
-//
-// Something in this area was redacted.
-//
-// Area specific to a subject (human or not).
-//
-// A range of information was removed/deleted.
-//
-// Styling was applied to this area.
-//
-// Invisible watermarking was applied to this area for the purpose of soft binding.
-type RoleEnum string
-
-const (
-	C2PaAreaOfInterest RoleEnum = "c2pa.areaOfInterest"
-	C2PaCropped        RoleEnum = "c2pa.cropped"
-	C2PaDeleted        RoleEnum = "c2pa.deleted"
-	C2PaEdited         RoleEnum = "c2pa.edited"
-	C2PaPlaced         RoleEnum = "c2pa.placed"
-	C2PaRedacted       RoleEnum = "c2pa.redacted"
-	C2PaStyled         RoleEnum = "c2pa.styled"
-	C2PaSubjectArea    RoleEnum = "c2pa.subjectArea"
-	C2PaWatermarked    RoleEnum = "c2pa.watermarked"
 )
 
 // Set to `ParentOf` if this is the parent ingredient.
