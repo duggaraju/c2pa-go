@@ -162,6 +162,8 @@ func TestNewSignerWithOCSPResponse(t *testing.T) {
 	require.NoError(t, err)
 	privateKey, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pem")
 	require.NoError(t, err)
+	response, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/crypto/ocsp/response_good.der")
+	require.NoError(t, err)
 
 	signer, err := NewSignerFromInfo(SignerInfo{
 		Alg:        "ps256",
@@ -170,7 +172,7 @@ func TestNewSignerWithOCSPResponse(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	stapled, err := NewSignerWithOCSPResponse(signer, []byte("DER-encoded OCSP response"))
+	stapled, err := NewSignerWithOCSPResponse(signer, response)
 	require.NoError(t, err)
 	defer stapled.(*ocspSigner).Close()
 	assert.Equal(t, signer.Alg(), stapled.Alg())
