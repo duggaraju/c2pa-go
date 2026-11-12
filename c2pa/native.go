@@ -480,6 +480,15 @@ func c2paSignerReserveSize(signer unsafe.Pointer) int64 {
 	return int64(C.c2pa_signer_reserve_size((*C.C2paSigner)(signer)))
 }
 
+func c2paSignerWithOCSPResponse(signer unsafe.Pointer, response []byte) unsafe.Pointer {
+	var responsePtr *C.uchar
+	if len(response) > 0 {
+		responsePtr = (*C.uchar)(unsafe.Pointer(&response[0]))
+	}
+	return unsafe.Pointer(C.c2pa_signer_with_ocsp_response(
+		(*C.C2paSigner)(signer), responsePtr, C.uintptr_t(len(response))))
+}
+
 func c2paSignerCreate(handle uintptr, alg SigningAlg, tsaUrl, certificates string) unsafe.Pointer {
 	cAlg, ok := signingAlgToC[alg]
 	if !ok {

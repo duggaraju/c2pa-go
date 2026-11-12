@@ -100,6 +100,7 @@ func c2paBuilderComposeManifest(unsafe.Pointer, string, []byte) ([]byte, int64) 
 // ---- signer ----------------------------------------------------------------
 
 func c2paSignerReserveSize(unsafe.Pointer) int64                           { return -1 }
+func c2paSignerWithOCSPResponse(unsafe.Pointer, []byte) unsafe.Pointer     { return nil }
 func c2paSignerCreate(uintptr, SigningAlg, string, string) unsafe.Pointer  { return nil }
 func c2paSignerFromInfo(SigningAlg, string, string, string) unsafe.Pointer { return nil }
 func c2paIdentitySignerCreate(unsafe.Pointer, unsafe.Pointer, []string, []string) unsafe.Pointer {
