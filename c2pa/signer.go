@@ -67,8 +67,17 @@ type identitySigner struct {
 	native   *NativeSigner
 }
 
+type ocspSigner struct {
+	source Signer
+	native *NativeSigner
+}
+
 type credentialHolderAdapter struct {
 	holder CredentialHolder
+}
+
+type nativeSignerRestorer interface {
+	restoreNativeSigner(*NativeSigner)
 }
 
 // goSignerCallback is invoked from the cgo signerCallback in native.go.
@@ -156,6 +165,34 @@ func NewSignerFromInfo(info SignerInfo) (Signer, error) {
 		return nil, err
 	}
 	return &signerFromInfo{info: info, native: native}, nil
+}
+
+// NewSignerWithOCSPResponse returns a signer that staples a DER-encoded OCSP
+// response to signatures. Call it once per certificate in the chain, starting
+// with the signing certificate. On success, ownership of signer transfers to
+// the returned signer.
+func NewSignerWithOCSPResponse(signer Signer, response []byte) (Signer, error) {
+	if len(response) == 0 {
+		return nil, fmt.Errorf("OCSP response is empty")
+	}
+	native, err := takeNativeSigner(signer)
+	if err != nil {
+		return nil, err
+	}
+	ptr := c2paSignerWithOCSPResponse(native.ptr, response)
+	if ptr == nil {
+		if restorer, ok := signer.(nativeSignerRestorer); ok {
+			restorer.restoreNativeSigner(native)
+		} else {
+			native.Close()
+		}
+		return nil, fmt.Errorf("failed to attach OCSP response to signer: %s", c2paError())
+	}
+
+	wrapped := &NativeSigner{ptr: ptr, handles: native.handles}
+	native.ptr = nil
+	native.handles = nil
+	return &ocspSigner{source: signer, native: wrapped}, nil
 }
 
 func takeNativeSigner(signer Signer) (*NativeSigner, error) {
@@ -297,6 +334,12 @@ func (s *signerFromInfo) takeNativeSigner() (*NativeSigner, error) {
 	return native, nil
 }
 
+func (s *signerFromInfo) restoreNativeSigner(native *NativeSigner) {
+	if s != nil {
+		s.native = native
+	}
+}
+
 func (s *signerFromInfo) ReserveSize() (int64, error) {
 	if s == nil || s.native == nil {
 		return 0, fmt.Errorf("signer is nil")
@@ -342,6 +385,12 @@ func (s *identitySigner) takeNativeSigner() (*NativeSigner, error) {
 	return native, nil
 }
 
+func (s *identitySigner) restoreNativeSigner(native *NativeSigner) {
+	if s != nil {
+		s.native = native
+	}
+}
+
 func (s *identitySigner) ReserveSize() (int64, error) {
 	if s == nil || s.native == nil {
 		return 0, fmt.Errorf("identity signer is nil")
@@ -350,6 +399,57 @@ func (s *identitySigner) ReserveSize() (int64, error) {
 }
 
 func (s *identitySigner) Close() {
+	if s == nil || s.native == nil {
+		return
+	}
+	s.native.Close()
+	s.native = nil
+}
+
+func (s *ocspSigner) Alg() SigningAlg {
+	if s == nil || s.source == nil {
+		return ""
+	}
+	return s.source.Alg()
+}
+
+func (s *ocspSigner) TimeStampUrl() string {
+	if s == nil || s.source == nil {
+		return ""
+	}
+	return s.source.TimeStampUrl()
+}
+
+func (s *ocspSigner) Certificates() string {
+	if s == nil || s.source == nil {
+		return ""
+	}
+	return s.source.Certificates()
+}
+
+func (s *ocspSigner) takeNativeSigner() (*NativeSigner, error) {
+	if s == nil || s.native == nil || s.native.ptr == nil {
+		return nil, fmt.Errorf("OCSP signer is nil")
+	}
+	native := s.native
+	s.native = nil
+	return native, nil
+}
+
+func (s *ocspSigner) restoreNativeSigner(native *NativeSigner) {
+	if s != nil {
+		s.native = native
+	}
+}
+
+func (s *ocspSigner) ReserveSize() (int64, error) {
+	if s == nil || s.native == nil {
+		return 0, fmt.Errorf("OCSP signer is nil")
+	}
+	return s.native.ReserveSize()
+}
+
+func (s *ocspSigner) Close() {
 	if s == nil || s.native == nil {
 		return
 	}

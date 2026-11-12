@@ -157,6 +157,50 @@ func TestNewIdentitySignerWithCredentialHolder(t *testing.T) {
 	assert.Greater(t, size, int64(0))
 }
 
+func TestNewSignerWithOCSPResponse(t *testing.T) {
+	signCert, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pub")
+	require.NoError(t, err)
+	privateKey, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pem")
+	require.NoError(t, err)
+
+	signer, err := NewSignerFromInfo(SignerInfo{
+		Alg:        "ps256",
+		SignCert:   string(signCert),
+		PrivateKey: string(privateKey),
+	})
+	require.NoError(t, err)
+
+	stapled, err := NewSignerWithOCSPResponse(signer, []byte("DER-encoded OCSP response"))
+	require.NoError(t, err)
+	defer stapled.(*ocspSigner).Close()
+	assert.Equal(t, signer.Alg(), stapled.Alg())
+
+	size, err := stapled.(*ocspSigner).ReserveSize()
+	require.NoError(t, err)
+	assert.Greater(t, size, int64(0))
+}
+
+func TestNewSignerWithEmptyOCSPResponsePreservesSigner(t *testing.T) {
+	signCert, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pub")
+	require.NoError(t, err)
+	privateKey, err := os.ReadFile("../c2pa-rs/sdk/tests/fixtures/certs/ps256.pem")
+	require.NoError(t, err)
+
+	signer, err := NewSignerFromInfo(SignerInfo{
+		Alg:        "ps256",
+		SignCert:   string(signCert),
+		PrivateKey: string(privateKey),
+	})
+	require.NoError(t, err)
+	defer signer.(*signerFromInfo).Close()
+
+	_, err = NewSignerWithOCSPResponse(signer, nil)
+	require.Error(t, err)
+	size, err := signer.(*signerFromInfo).ReserveSize()
+	require.NoError(t, err)
+	assert.Greater(t, size, int64(0))
+}
+
 func TestCredentialHolderCallbackRejectsOversizedResult(t *testing.T) {
 	handle := cgo.NewHandle(&credentialHolderAdapter{holder: &testCredentialHolder{written: 5}})
 	defer handle.Delete()
