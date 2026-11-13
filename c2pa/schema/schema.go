@@ -1557,6 +1557,16 @@ type Core struct {
 	// [`IdentityAssertion`]: crate::identity::IdentityAssertion
 	// [`Reader`]: crate::Reader
 	DecodeIdentityAssertions *bool `json:"decode_identity_assertions,omitempty"`
+	// Total time limit, in milliseconds, of an SDK HTTP request: remote manifest fetches,
+	// OCSP fetches, CAWG `did:web` resolution and settings-based remote signing.
+	// Time-stamp requests use the `time_stamp_*` settings instead.
+	//
+	// Native built-in HTTP resolvers enforce this limit. Custom resolvers, including C/C++
+	// callbacks, receive it as [`crate::http::RequestTimeout`] (`timeout_ms` in C) and must
+	// apply it themselves.
+	//
+	// The default is 10,000 (10 seconds). The value must be positive.
+	HTTPRequestTimeoutInMS *int64 `json:"http_request_timeout_in_ms,omitempty"`
 	// Maximum size in megabytes of a Brotli-decompressed JUMBF manifest.
 	// Limits memory consumption from decompression bomb attacks.
 	//
