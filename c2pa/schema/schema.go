@@ -1673,6 +1673,9 @@ type AnchorElement struct {
 	// When used for C2PA this will not be C2PA trust list recognized or acknowledged
 	// certificates and
 	// should only be used for non-C2PA conformant cases.
+	//
+	// Only the allowed list of a [`TrustListKind::Manifest`] entry trusts claim signers.
+	// The allowed list of a [`TrustListKind::CAWG`] entry trusts CAWG identities only.
 	AllowedList *string `json:"allowed_list"`
 	// Specifies the details of a specific trust list.
 	//
